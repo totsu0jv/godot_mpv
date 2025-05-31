@@ -218,7 +218,7 @@ bool MPVPlayer::initialize() {
     // Set basic MPV options
     mpv_set_option_string(mpv, "vo", "libmpv");
     mpv_set_option_string(mpv, "hwdec", "sw");
-    // mpv_set_option_string(mpv, "video-sync", "display");
+    mpv_set_option_string(mpv, "video-sync", "display");
     
     // Set network-related options for better HTTP streaming support
     mpv_set_option_string(mpv, "network-timeout", "15"); // 15 seconds timeout
@@ -289,8 +289,6 @@ bool MPVPlayer::initialize_gl() {
     if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
     UtilityFunctions::print("Initializing OpenGL for MPV rendering");
     
-    // init and load openGL on windows
-    #ifdef _WIN32
     EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (display == EGL_NO_DISPLAY) {
         UtilityFunctions::print("failed to init egl display");
@@ -336,8 +334,6 @@ bool MPVPlayer::initialize_gl() {
     if (!gladLoadGLES2((GLADloadfunc)load_func)) {
         UtilityFunctions::print("eglGetProcName failed");
     }
-
-    #endif
 
     // Create FBO for rendering
     glGenFramebuffers(1, &fbo);
@@ -420,9 +416,7 @@ void MPVPlayer::_update_texture_internal() {
     
     {
         std::lock_guard<std::mutex> lock(frame_mutex);
-        
-        // Don't flip the image - use the data as is since it's already in the correct orientation for 3D
-        // Just copy the data directly
+
         new_image->set_data(width, height, false, Image::FORMAT_RGBA8, pending_frame_data);
     }
     
@@ -490,54 +484,11 @@ void MPVPlayer::_process(double delta) {
                 // Read pixels - make sure we're reading RGBA data
                 glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixel_data.ptrw());
                 
-                // Verify we have actual data
-                bool has_content = false;
                 uint8_t* data = (uint8_t*)pixel_data.ptrw();
                 
-                // For HTTP streams, always process frames even if they're black
-                if (is_streaming) {
-                    // For streaming, we'll always accept frames and update the texture
-                    has_content = true;
-                    frame_count++;
-                    
-                    if (frame_count % 10 == 0 || frame_count < 5) { // Reduce log spam
-                        if(debug_level == DEBUG_FULL)
-                        UtilityFunctions::print("Streaming mode: processing frame #", frame_count);
-                    }
-                    
-                    // Check if this frame has actual content (for debugging only)
-                    bool has_visible_content = false;
-                    for (int i = 0; i < width * height * 4; i += 4) {
-                        if (data[i] != 0 || data[i+1] != 0 || data[i+2] != 0) {
-                            has_visible_content = true;
-                            break;
-                        }
-                    }
-                    
-                    if (has_visible_content && !had_visible_content) {
-                        had_visible_content = true;
-                        UtilityFunctions::print("First non-black frame detected at frame #", frame_count);
-                    }
-                } else {
-                    // For local files, check for actual content
-                    for (int i = 0; i < width * height * 4; i += 4) {
-                        if (data[i] != 0 || data[i+1] != 0 || data[i+2] != 0) {
-                            has_content = true;
-                            break;
-                        }
-                    }
-                }
-                
-                if (has_content) {
-                    memcpy(pending_frame_data.ptrw(), pixel_data.ptr(), width * height * 4);
-                    has_new_frame.store(true);
-                    
-                    if(debug_level == DEBUG_FULL)
-                        UtilityFunctions::print("Frame data captured");
-                } else {
-                    if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
-                        UtilityFunctions::print("WARNING: Frame data is empty (all black)");
-                }
+                memcpy(pending_frame_data.ptrw(), pixel_data.ptr(), width * height * 4);
+                has_new_frame.store(true);
+
             }
             
             // Unbind our FBO to restore the default framebuffer
@@ -623,54 +574,6 @@ void MPVPlayer::_process(double delta) {
             }
             
             event = mpv_wait_event(mpv, 0);
-        }
-        
-        // For streaming, we need to be more aggressive about requesting frame updates
-        if (is_streaming) {
-            // For HTTP streams, check playback status
-            int64_t time_pos = 0;
-            int paused = 0;
-            
-            // Get current playback position
-            if (mpv_get_property(mpv, "time-pos", MPV_FORMAT_INT64, &time_pos) >= 0) {
-                if (debug_level == DEBUG_FULL && frame_count % 60 == 0) {
-                    UtilityFunctions::print("Stream position: ", time_pos, " seconds");
-                }
-            }
-            
-            // Check if playback is paused
-            if (mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &paused) >= 0) {
-                if (paused) {
-                    // If paused, try to resume playback
-                    if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL) {
-                        UtilityFunctions::print("Stream is paused, attempting to resume");
-                    }
-                    mpv_set_property_string(mpv, "pause", "no");
-                }
-            }
-            
-            // Force a frame update every few frames to keep the stream going
-            if (frame_count % 10 == 0) {
-                texture_needs_update.store(true);
-                
-                if(debug_level == DEBUG_FULL) {
-                    UtilityFunctions::print("Requesting frame update for streaming, frame #", frame_count);
-                }
-                
-                // If we haven't seen any content after a significant number of frames, try to restart
-                if (!had_visible_content && frame_count > 100) {
-                    if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL) {
-                        UtilityFunctions::print("No visible content after ", frame_count, " frames, trying to restart playback");
-                    }
-                    
-                    // Send a seek command to restart playback
-                    const char* cmd[] = {"seek", "0", "absolute", nullptr};
-                    mpv_command_async(mpv, 0, cmd);
-                    
-                    // Reset frame counter
-                    frame_count = 0;
-                }
-            }
         }
     }
 }

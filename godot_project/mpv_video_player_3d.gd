@@ -22,7 +22,7 @@ func _ready():
 	# Initialize the player
 	mpv_player.initialize()
 	
-	# Get the MeshInstance3D node - assuming there's a MeshInstance3D named "Screen" in your scene
+	 #Get the MeshInstance3D node - assuming there's a MeshInstance3D named "Screen" in your scene
 	var mesh_instance_3d = $Screen
 	
 	if mesh_instance_3d:
@@ -60,11 +60,11 @@ func _ready():
 	mpv_player.load_file("https://video.blender.org/videos/watch/04da454b-9893-4184-98f3-248d00625efe")
 	mpv_player.play() 
 
-# This function is called whenever a new video frame is available
+ #This function is called whenever a new video frame is available
 func _on_texture_updated(texture):
-	texture_update_count += 1
-	if debug_level == 2:
-		print("Texture updated: ", texture_update_count)
+	#texture_update_count += 1
+	#if debug_level == 2:
+		#print("Texture updated: ", texture_update_count)
 	
 	var mesh_instance_3d = $Screen
 	if mesh_instance_3d and texture:
@@ -89,49 +89,7 @@ func _on_texture_updated(texture):
 			print("ERROR: Material is not a StandardMaterial3D")
 	else:
 		print("ERROR: Screen mesh not found when updating texture or texture is null")
-		
-#func setup_ui():
-	## Create a simple UI for controlling playback (optional)
-	#var ui_container = VBoxContainer.new()
-	#ui_container.position = Vector2(20, 20)
-	#add_child(ui_container)
-	#
-	#var button_container = HBoxContainer.new()
-	#ui_container.add_child(button_container)
-	#
-	## Play button
-	#play_button = Button.new()
-	#play_button.text = "Play"
-	#play_button.pressed.connect(_on_play_button_pressed)
-	#button_container.add_child(play_button)
-	#
-	## Pause button
-	#pause_button = Button.new()
-	#pause_button.text = "Pause"
-	#pause_button.pressed.connect(_on_pause_button_pressed)
-	#button_container.add_child(pause_button)
-	#
-	## Stop button
-	#stop_button = Button.new()
-	#stop_button.text = "Stop"
-	#stop_button.pressed.connect(_on_stop_button_pressed)
-	#button_container.add_child(stop_button)
-#
-#func _on_play_button_pressed():
-	#mpv_player.play()
-#
-#func _on_pause_button_pressed():
-	#mpv_player.pause()
-#
-#func _on_stop_button_pressed():
-	#mpv_player.stop()
-
-func _process(delta):
-	# Add a periodic check to ensure things are working
-	if Engine.get_frames_drawn() % 60 == 0:  # Check roughly every second
-		if texture_update_count == 0:
-			print("WARNING: No texture updates received yet!")
-			
+	
 func _exit_tree():
 	# Clean up resources when the scene is exited
 	if mpv_player:

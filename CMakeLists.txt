@@ -86,15 +86,36 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         src
     )
 else()
+
+    add_library(glad_gles2 SHARED
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
+    )
+
+    target_include_directories(glad_gles2 PUBLIC
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
+    )
+    
+    add_library(glad_egl SHARED
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
+    )
+
+    target_include_directories(glad_egl PUBLIC
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
+    )
+
     add_library(${PROJECT_NAME} SHARED ${SOURCES})
     target_link_libraries(${PROJECT_NAME} PRIVATE
         godot-cpp
+        glad_gles2
+        glad_egl
+        mpv
         )
 
     # Compiler settings
     target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
     target_include_directories(${PROJECT_NAME} PRIVATE 
         ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/dependencies/glad
         ${GODOT_CPP_PATH}/include
         src
     )

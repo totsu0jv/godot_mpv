@@ -8,7 +8,7 @@
 ![Logo of mpv](https://img.shields.io/badge/MPV-691F69?logo=mpv&logoColor=white)
 ![Logo of linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)
 
-This GDextension implements the open-source MPV video player in Godot Engine 4.4. It's capable of playing local and http video stream to your MeshInstance2D or MeshInstance3D plane surfaces. It relies on Godot's compatibility rendering layer wich uses OpenGL.
+This GDextension implements the open-source MPV video player in Godot Engine 4.4. It's capable of playing local and http video stream to your MeshInstance2D or MeshInstance3D plane surfaces.
 
 ---
 [Usage](#usage)
@@ -57,6 +57,11 @@ Download and extract the GDextension files from the release page into your proje
 ```bash
 sudo apt install libegl1-mesa-dev libgles2-mesa-dev
 ```
+- GLAD (to load OpenGL and use EGL/GLES2 headers, use the generator [here](https://gen.glad.sh/))
+> GLAD configuration: 
+> EGL 1.5 
+> GLES2 3.2
+> ✅ Loader
 - CMake for project compilation <em>([CMake download page](https://cmake.org/download/))</em>
 
 ### <em>build steps</em>
@@ -86,11 +91,11 @@ sudo ./install
 cd at the root directory of the project
 Configure CMake for the project
 ```bash
-cmake . -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
+cmake -S . -D CMAKE_BUILD_TYPE=Debug -B ./build
 ```
 Compile the project (you can of course allow more threads when compiling "-j8")
 ```bash
-cmake --build . -- -j4
+cmake --build ./build -j4
 ```
 ---
 ## Windows
