@@ -66,11 +66,15 @@ void MPVPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_audio_track_count"), &MPVPlayer::get_audio_track_count);
     ClassDB::bind_method(D_METHOD("get_current_audio_track"), &MPVPlayer::get_current_audio_track);
     ClassDB::bind_method(D_METHOD("set_audio_track", "track_id"), &MPVPlayer::set_audio_track);
+    ClassDB::bind_method(D_METHOD("get_audio_track_info", "track_id"), &MPVPlayer::get_audio_track_info);
+    ClassDB::bind_method(D_METHOD("get_all_audio_tracks"), &MPVPlayer::get_all_audio_tracks);
     
     ClassDB::bind_method(D_METHOD("get_subtitle_track_count"), &MPVPlayer::get_subtitle_track_count);
     ClassDB::bind_method(D_METHOD("get_current_subtitle_track"), &MPVPlayer::get_current_subtitle_track);
     ClassDB::bind_method(D_METHOD("set_subtitle_track", "track_id"), &MPVPlayer::set_subtitle_track);
     ClassDB::bind_method(D_METHOD("toggle_subtitles"), &MPVPlayer::toggle_subtitles);
+    ClassDB::bind_method(D_METHOD("get_subtitle_track_info", "track_id"), &MPVPlayer::get_subtitle_track_info);
+    ClassDB::bind_method(D_METHOD("get_all_subtitle_tracks"), &MPVPlayer::get_all_subtitle_tracks);
     
     // Video properties
     ClassDB::bind_method(D_METHOD("get_media_title"), &MPVPlayer::get_media_title);
@@ -327,8 +331,101 @@ void MPVPlayer::previous_chapter() {
 
 // ==================== Track Selection ====================
 
+Dictionary MPVPlayer::get_track_info(int track_index) const {
+    Dictionary track_info;
+    
+    if (!mpv || track_index < 0) {
+        return track_info;
+    }
+    
+    // Build property path for this track
+    String base_path = "track-list/" + String::num_int64(track_index) + "/";
+    
+    // Get track type
+    String type_path = base_path + "type";
+    CharString type_cs = type_path.utf8();
+    String track_type = get_property_string(type_cs.get_data(), "");
+    
+    if (track_type.is_empty()) {
+        return track_info; // Track doesn't exist
+    }
+    
+    track_info["index"] = track_index;
+    track_info["type"] = track_type;
+    
+    // Get track ID
+    String id_path = base_path + "id";
+    CharString id_cs = id_path.utf8();
+    track_info["id"] = static_cast<int>(get_property_int(id_cs.get_data(), 0));
+    
+    // Get language
+    String lang_path = base_path + "lang";
+    CharString lang_cs = lang_path.utf8();
+    String language = get_property_string(lang_cs.get_data(), "");
+    track_info["language"] = language.is_empty() ? "unknown" : language;
+    
+    // Get title/name
+    String title_path = base_path + "title";
+    CharString title_cs = title_path.utf8();
+    String title = get_property_string(title_cs.get_data(), "");
+    track_info["title"] = title.is_empty() ? ("Track " + String::num_int64(track_index)) : title;
+    
+    // Get codec
+    String codec_path = base_path + "codec";
+    CharString codec_cs = codec_path.utf8();
+    track_info["codec"] = get_property_string(codec_cs.get_data(), "unknown");
+    
+    // Check if selected
+    String selected_path = base_path + "selected";
+    CharString selected_cs = selected_path.utf8();
+    track_info["selected"] = get_property_bool(selected_cs.get_data(), false);
+    
+    // For audio tracks, get additional info
+    if (track_type == "audio") {
+        String channels_path = base_path + "demux-channel-count";
+        CharString channels_cs = channels_path.utf8();
+        track_info["channels"] = static_cast<int>(get_property_int(channels_cs.get_data(), 0));
+        
+        String samplerate_path = base_path + "demux-samplerate";
+        CharString samplerate_cs = samplerate_path.utf8();
+        track_info["samplerate"] = static_cast<int>(get_property_int(samplerate_cs.get_data(), 0));
+    }
+    
+    // For subtitle tracks, get additional info
+    if (track_type == "sub") {
+        String external_path = base_path + "external";
+        CharString external_cs = external_path.utf8();
+        track_info["external"] = get_property_bool(external_cs.get_data(), false);
+        
+        String forced_path = base_path + "forced";
+        CharString forced_cs = forced_path.utf8();
+        track_info["forced"] = get_property_bool(forced_cs.get_data(), false);
+        
+        String default_path = base_path + "default";
+        CharString default_cs = default_path.utf8();
+        track_info["default"] = get_property_bool(default_cs.get_data(), false);
+    }
+    
+    return track_info;
+}
+
 int MPVPlayer::get_audio_track_count() const {
-    return static_cast<int>(get_property_int("track-list/count", 0));
+    if (!mpv) return 0;
+    
+    int count = 0;
+    int64_t track_count = get_property_int("track-list/count", 0);
+    
+    for (int i = 0; i < track_count; i++) {
+        String type_path = "track-list/" + String::num_int64(i) + "/type";
+        CharString cs = type_path.utf8();
+        String track_type = get_property_string(cs.get_data(), "");
+        
+        if (track_type == "audio") {
+            count++;
+        }
+    }
+    
+    return count;
 }
 
 int MPVPlayer::get_current_audio_track() const {
@@ -339,8 +436,63 @@ void MPVPlayer::set_audio_track(int track_id) {
     set_property_int("aid", track_id);
 }
 
+Dictionary MPVPlayer::get_audio_track_info(int track_id) const {
+    if (!mpv) {
+        return Dictionary();
+    }
+    
+    // Find the track with matching ID and type "audio"
+    int64_t track_count = get_property_int("track-list/count", 0);
+    
+    for (int i = 0; i < track_count; i++) {
+        Dictionary info = get_track_info(i);
+        
+        if (info.has("type") && info["type"] == "audio" && 
+            info.has("id") && static_cast<int>(info["id"]) == track_id) {
+            return info;
+        }
+    }
+    
+    return Dictionary();
+}
+
+Array MPVPlayer::get_all_audio_tracks() const {
+    Array tracks;
+    
+    if (!mpv) {
+        return tracks;
+    }
+    
+    int64_t track_count = get_property_int("track-list/count", 0);
+    
+    for (int i = 0; i < track_count; i++) {
+        Dictionary info = get_track_info(i);
+        
+        if (info.has("type") && info["type"] == "audio") {
+            tracks.push_back(info);
+        }
+    }
+    
+    return tracks;
+}
+
 int MPVPlayer::get_subtitle_track_count() const {
-    return static_cast<int>(get_property_int("track-list/count", 0));
+    if (!mpv) return 0;
+    
+    int count = 0;
+    int64_t track_count = get_property_int("track-list/count", 0);
+    
+    for (int i = 0; i < track_count; i++) {
+        String type_path = "track-list/" + String::num_int64(i) + "/type";
+        CharString cs = type_path.utf8();
+        String track_type = get_property_string(cs.get_data(), "");
+        
+        if (track_type == "sub") {
+            count++;
+        }
+    }
+    
+    return count;
 }
 
 int MPVPlayer::get_current_subtitle_track() const {
@@ -359,6 +511,46 @@ void MPVPlayer::toggle_subtitles() {
     
     const char* cmd[] = {"cycle", "sub-visibility", nullptr};
     mpv_command_async(mpv, 0, cmd);
+}
+
+Dictionary MPVPlayer::get_subtitle_track_info(int track_id) const {
+    if (!mpv) {
+        return Dictionary();
+    }
+    
+    // Find the track with matching ID and type "sub"
+    int64_t track_count = get_property_int("track-list/count", 0);
+    
+    for (int i = 0; i < track_count; i++) {
+        Dictionary info = get_track_info(i);
+        
+        if (info.has("type") && info["type"] == "sub" && 
+            info.has("id") && static_cast<int>(info["id"]) == track_id) {
+            return info;
+        }
+    }
+    
+    return Dictionary();
+}
+
+Array MPVPlayer::get_all_subtitle_tracks() const {
+    Array tracks;
+    
+    if (!mpv) {
+        return tracks;
+    }
+    
+    int64_t track_count = get_property_int("track-list/count", 0);
+    
+    for (int i = 0; i < track_count; i++) {
+        Dictionary info = get_track_info(i);
+        
+        if (info.has("type") && info["type"] == "sub") {
+            tracks.push_back(info);
+        }
+    }
+    
+    return tracks;
 }
 
 // ==================== Video Properties ====================

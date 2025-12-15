@@ -136,11 +136,15 @@ public:
     int get_audio_track_count() const;
     int get_current_audio_track() const;
     void set_audio_track(int track_id);
+    Dictionary get_audio_track_info(int track_id) const;
+    Array get_all_audio_tracks() const;
     
     int get_subtitle_track_count() const;
     int get_current_subtitle_track() const;
     void set_subtitle_track(int track_id);
     void toggle_subtitles();
+    Dictionary get_subtitle_track_info(int track_id) const;
+    Array get_all_subtitle_tracks() const;
     
     // Video properties
     String get_media_title() const;
@@ -214,6 +218,9 @@ private:
     void set_property_int(const char* name, int64_t value);
     void set_property_string(const char* name, const String& value);
     void set_property_bool(const char* name, bool value);
+    
+    // Helper for track information
+    Dictionary get_track_info(int track_index) const;
 };
 
 #endif // MPV_PLAYER_H
