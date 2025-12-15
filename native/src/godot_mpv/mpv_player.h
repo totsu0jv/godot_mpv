@@ -72,8 +72,8 @@ private:
     // Streaming support
     bool is_streaming = false;
     int frame_count = 0;
-    int stream_frame_threshold = 30; // Allow up to 30 black frames for streaming
-    bool had_visible_content = false; // Track if we've seen non-black content
+    int stream_frame_threshold = 30;
+    bool had_visible_content = false;
     
 protected:
     static void _bind_methods();
@@ -92,11 +92,66 @@ public:
     // Initialize the MPV player
     bool initialize();
     
-    // Load and play a video file
+    // Basic playback controls
     void load_file(const String& path);
     void play();
     void pause();
     void stop();
+    void toggle_pause();
+    
+    // Seeking controls
+    void seek(double seconds, bool relative = true);
+    void seek_to_percentage(double percentage);
+    
+    // Playback speed
+    void set_speed(double speed);
+    double get_speed() const;
+    
+    // Volume and audio controls
+    void set_volume(double volume); // 0-100
+    double get_volume() const;
+    void set_mute(bool muted);
+    bool is_muted() const;
+    
+    // Playback state queries
+    bool is_playing() const;
+    bool is_paused() const;
+    double get_time_pos() const;
+    double get_duration() const;
+    double get_percentage_pos() const;
+    
+    // Looping controls
+    void set_loop(bool enable);
+    void set_loop_file(const String& mode); // "inf", "no", or number
+    bool get_loop() const;
+    
+    // Chapter controls
+    int get_chapter_count() const;
+    int get_current_chapter() const;
+    void set_chapter(int chapter);
+    void next_chapter();
+    void previous_chapter();
+    
+    // Track selection (audio/subtitle)
+    int get_audio_track_count() const;
+    int get_current_audio_track() const;
+    void set_audio_track(int track_id);
+    
+    int get_subtitle_track_count() const;
+    int get_current_subtitle_track() const;
+    void set_subtitle_track(int track_id);
+    void toggle_subtitles();
+    
+    // Video properties
+    String get_media_title() const;
+    int get_video_width() const;
+    int get_video_height() const;
+    double get_fps() const;
+    String get_video_codec() const;
+    String get_audio_codec() const;
+    
+    // Screenshot
+    void screenshot(const String& filename = "", bool subtitles = true);
 
     // Create a video mesh for 2D display
     MeshInstance2D* create_video_mesh_2d();
@@ -148,6 +203,17 @@ private:
     static void* get_proc_address_mpv(void* ctx, const char* name) {
         return (void*)eglGetProcAddress(name);
     }
+    
+    // Helper methods for MPV property access
+    double get_property_double(const char* name, double default_value = 0.0) const;
+    int64_t get_property_int(const char* name, int64_t default_value = 0) const;
+    String get_property_string(const char* name, const String& default_value = "") const;
+    bool get_property_bool(const char* name, bool default_value = false) const;
+    
+    void set_property_double(const char* name, double value);
+    void set_property_int(const char* name, int64_t value);
+    void set_property_string(const char* name, const String& value);
+    void set_property_bool(const char* name, bool value);
 };
 
 #endif // MPV_PLAYER_H

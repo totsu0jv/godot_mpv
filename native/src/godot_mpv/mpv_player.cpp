@@ -21,31 +21,400 @@ void* load_func(const char* name) {
 }
 
 void MPVPlayer::_bind_methods() {
-    // Register methods
+    // Register methods (existing ones remain)
     ClassDB::bind_method(D_METHOD("initialize"), &MPVPlayer::initialize);
     ClassDB::bind_method(D_METHOD("load_file", "path"), &MPVPlayer::load_file);
     ClassDB::bind_method(D_METHOD("play"), &MPVPlayer::play);
     ClassDB::bind_method(D_METHOD("pause"), &MPVPlayer::pause);
     ClassDB::bind_method(D_METHOD("stop"), &MPVPlayer::stop);
+    ClassDB::bind_method(D_METHOD("toggle_pause"), &MPVPlayer::toggle_pause);
     
-    // Video mesh methods
+    // Seeking controls
+    ClassDB::bind_method(D_METHOD("seek", "seconds", "relative"), &MPVPlayer::seek);
+    ClassDB::bind_method(D_METHOD("seek_to_percentage", "percentage"), &MPVPlayer::seek_to_percentage);
+    
+    // Speed control
+    ClassDB::bind_method(D_METHOD("set_speed", "speed"), &MPVPlayer::set_speed);
+    ClassDB::bind_method(D_METHOD("get_speed"), &MPVPlayer::get_speed);
+    
+    // Volume and audio
+    ClassDB::bind_method(D_METHOD("set_volume", "volume"), &MPVPlayer::set_volume);
+    ClassDB::bind_method(D_METHOD("get_volume"), &MPVPlayer::get_volume);
+    ClassDB::bind_method(D_METHOD("set_mute", "muted"), &MPVPlayer::set_mute);
+    ClassDB::bind_method(D_METHOD("is_muted"), &MPVPlayer::is_muted);
+    
+    // Playback state
+    ClassDB::bind_method(D_METHOD("is_playing"), &MPVPlayer::is_playing);
+    ClassDB::bind_method(D_METHOD("is_paused"), &MPVPlayer::is_paused);
+    ClassDB::bind_method(D_METHOD("get_time_pos"), &MPVPlayer::get_time_pos);
+    ClassDB::bind_method(D_METHOD("get_duration"), &MPVPlayer::get_duration);
+    ClassDB::bind_method(D_METHOD("get_percentage_pos"), &MPVPlayer::get_percentage_pos);
+    
+    // Looping
+    ClassDB::bind_method(D_METHOD("set_loop", "enable"), &MPVPlayer::set_loop);
+    ClassDB::bind_method(D_METHOD("set_loop_file", "mode"), &MPVPlayer::set_loop_file);
+    ClassDB::bind_method(D_METHOD("get_loop"), &MPVPlayer::get_loop);
+    
+    // Chapters
+    ClassDB::bind_method(D_METHOD("get_chapter_count"), &MPVPlayer::get_chapter_count);
+    ClassDB::bind_method(D_METHOD("get_current_chapter"), &MPVPlayer::get_current_chapter);
+    ClassDB::bind_method(D_METHOD("set_chapter", "chapter"), &MPVPlayer::set_chapter);
+    ClassDB::bind_method(D_METHOD("next_chapter"), &MPVPlayer::next_chapter);
+    ClassDB::bind_method(D_METHOD("previous_chapter"), &MPVPlayer::previous_chapter);
+    
+    // Tracks
+    ClassDB::bind_method(D_METHOD("get_audio_track_count"), &MPVPlayer::get_audio_track_count);
+    ClassDB::bind_method(D_METHOD("get_current_audio_track"), &MPVPlayer::get_current_audio_track);
+    ClassDB::bind_method(D_METHOD("set_audio_track", "track_id"), &MPVPlayer::set_audio_track);
+    
+    ClassDB::bind_method(D_METHOD("get_subtitle_track_count"), &MPVPlayer::get_subtitle_track_count);
+    ClassDB::bind_method(D_METHOD("get_current_subtitle_track"), &MPVPlayer::get_current_subtitle_track);
+    ClassDB::bind_method(D_METHOD("set_subtitle_track", "track_id"), &MPVPlayer::set_subtitle_track);
+    ClassDB::bind_method(D_METHOD("toggle_subtitles"), &MPVPlayer::toggle_subtitles);
+    
+    // Video properties
+    ClassDB::bind_method(D_METHOD("get_media_title"), &MPVPlayer::get_media_title);
+    ClassDB::bind_method(D_METHOD("get_video_width"), &MPVPlayer::get_video_width);
+    ClassDB::bind_method(D_METHOD("get_video_height"), &MPVPlayer::get_video_height);
+    ClassDB::bind_method(D_METHOD("get_fps"), &MPVPlayer::get_fps);
+    ClassDB::bind_method(D_METHOD("get_video_codec"), &MPVPlayer::get_video_codec);
+    ClassDB::bind_method(D_METHOD("get_audio_codec"), &MPVPlayer::get_audio_codec);
+    
+    // Screenshot
+    ClassDB::bind_method(D_METHOD("screenshot", "filename", "subtitles"), &MPVPlayer::screenshot);
+    
+    // Video mesh methods (existing)
     ClassDB::bind_method(D_METHOD("create_video_mesh_2d"), &MPVPlayer::create_video_mesh_2d);
     ClassDB::bind_method(D_METHOD("create_video_mesh_3d"), &MPVPlayer::create_video_mesh_3d);
     ClassDB::bind_method(D_METHOD("apply_to_mesh_3d", "mesh_instance"), &MPVPlayer::apply_to_mesh_3d);
     ClassDB::bind_method(D_METHOD("apply_to_viewport", "viewport"), &MPVPlayer::apply_to_viewport);
     
-    // Getters
+    // Getters (existing)
     ClassDB::bind_method(D_METHOD("get_debug_level"), &MPVPlayer::get_debug_level);
     ClassDB::bind_method(D_METHOD("get_texture"), &MPVPlayer::get_texture);
     ClassDB::bind_method(D_METHOD("get_width"), &MPVPlayer::get_width);
     ClassDB::bind_method(D_METHOD("get_height"), &MPVPlayer::get_height);
 
-    // Setters
+    // Setters (existing)
     ClassDB::bind_method(D_METHOD("set_debug_level"), &MPVPlayer::set_debug_level);
     
-    // Register signals
+    // Register signals (existing)
     ADD_SIGNAL(MethodInfo("texture_updated", PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D")));
+}
 
+// ==================== Helper Methods ====================
+
+double MPVPlayer::get_property_double(const char* name, double default_value) const {
+    if (!mpv) return default_value;
+    
+    double value = default_value;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_DOUBLE, &value) < 0) {
+        return default_value;
+    }
+    return value;
+}
+
+int64_t MPVPlayer::get_property_int(const char* name, int64_t default_value) const {
+    if (!mpv) return default_value;
+    
+    int64_t value = default_value;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_INT64, &value) < 0) {
+        return default_value;
+    }
+    return value;
+}
+
+String MPVPlayer::get_property_string(const char* name, const String& default_value) const {
+    if (!mpv) return default_value;
+    
+    char* value = nullptr;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_STRING, &value) < 0 || !value) {
+        return default_value;
+    }
+    
+    String result(value);
+    mpv_free(value);
+    return result;
+}
+
+bool MPVPlayer::get_property_bool(const char* name, bool default_value) const {
+    if (!mpv) return default_value;
+    
+    int value = default_value ? 1 : 0;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_FLAG, &value) < 0) {
+        return default_value;
+    }
+    return value != 0;
+}
+
+void MPVPlayer::set_property_double(const char* name, double value) {
+    if (!mpv) return;
+    mpv_set_property(mpv, name, MPV_FORMAT_DOUBLE, &value);
+}
+
+void MPVPlayer::set_property_int(const char* name, int64_t value) {
+    if (!mpv) return;
+    mpv_set_property(mpv, name, MPV_FORMAT_INT64, &value);
+}
+
+void MPVPlayer::set_property_string(const char* name, const String& value) {
+    if (!mpv) return;
+    CharString cs = value.utf8();
+    const char* c_str = cs.get_data();
+    mpv_set_property_string(mpv, name, c_str);
+}
+
+void MPVPlayer::set_property_bool(const char* name, bool value) {
+    if (!mpv) return;
+    int flag = value ? 1 : 0;
+    mpv_set_property(mpv, name, MPV_FORMAT_FLAG, &flag);
+}
+
+// ==================== Playback Controls ====================
+
+void MPVPlayer::toggle_pause() {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    bool paused = is_paused();
+    const char* cmd[] = {"set", "pause", paused ? "no" : "yes", nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+// ==================== Seeking Controls ====================
+
+void MPVPlayer::seek(double seconds, bool relative) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    String seconds_str = String::num(seconds);
+    CharString cs = seconds_str.utf8();
+    
+    const char* cmd[] = {
+        "seek", 
+        cs.get_data(), 
+        relative ? "relative" : "absolute",
+        nullptr
+    };
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::seek_to_percentage(double percentage) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    // Clamp percentage between 0 and 100
+    percentage = CLAMP(percentage, 0.0, 100.0);
+    
+    String percent_str = String::num(percentage);
+    CharString cs = percent_str.utf8();
+    
+    const char* cmd[] = {
+        "seek", 
+        cs.get_data(), 
+        "absolute-percent",
+        nullptr
+    };
+    mpv_command_async(mpv, 0, cmd);
+}
+
+// ==================== Speed Control ====================
+
+void MPVPlayer::set_speed(double speed) {
+    set_property_double("speed", speed);
+}
+
+double MPVPlayer::get_speed() const {
+    return get_property_double("speed", 1.0);
+}
+
+// ==================== Volume and Audio ====================
+
+void MPVPlayer::set_volume(double volume) {
+    // Clamp volume between 0 and 100
+    volume = CLAMP(volume, 0.0, 100.0);
+    set_property_double("volume", volume);
+}
+
+double MPVPlayer::get_volume() const {
+    return get_property_double("volume", 100.0);
+}
+
+void MPVPlayer::set_mute(bool muted) {
+    set_property_bool("mute", muted);
+}
+
+bool MPVPlayer::is_muted() const {
+    return get_property_bool("mute", false);
+}
+
+// ==================== Playback State ====================
+
+bool MPVPlayer::is_playing() const {
+    return !is_paused();
+}
+
+bool MPVPlayer::is_paused() const {
+    return get_property_bool("pause", true);
+}
+
+double MPVPlayer::get_time_pos() const {
+    return get_property_double("time-pos", 0.0);
+}
+
+double MPVPlayer::get_duration() const {
+    return get_property_double("duration", 0.0);
+}
+
+double MPVPlayer::get_percentage_pos() const {
+    return get_property_double("percent-pos", 0.0);
+}
+
+// ==================== Looping Controls ====================
+
+void MPVPlayer::set_loop(bool enable) {
+    set_property_string("loop-file", enable ? "inf" : "no");
+}
+
+void MPVPlayer::set_loop_file(const String& mode) {
+    set_property_string("loop-file", mode);
+}
+
+bool MPVPlayer::get_loop() const {
+    String loop_mode = get_property_string("loop-file", "no");
+    return loop_mode != "no";
+}
+
+// ==================== Chapter Controls ====================
+
+int MPVPlayer::get_chapter_count() const {
+    return static_cast<int>(get_property_int("chapters", 0));
+}
+
+int MPVPlayer::get_current_chapter() const {
+    return static_cast<int>(get_property_int("chapter", -1));
+}
+
+void MPVPlayer::set_chapter(int chapter) {
+    set_property_int("chapter", chapter);
+}
+
+void MPVPlayer::next_chapter() {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    const char* cmd[] = {"add", "chapter", "1", nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::previous_chapter() {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    const char* cmd[] = {"add", "chapter", "-1", nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+// ==================== Track Selection ====================
+
+int MPVPlayer::get_audio_track_count() const {
+    return static_cast<int>(get_property_int("track-list/count", 0));
+}
+
+int MPVPlayer::get_current_audio_track() const {
+    return static_cast<int>(get_property_int("aid", 0));
+}
+
+void MPVPlayer::set_audio_track(int track_id) {
+    set_property_int("aid", track_id);
+}
+
+int MPVPlayer::get_subtitle_track_count() const {
+    return static_cast<int>(get_property_int("track-list/count", 0));
+}
+
+int MPVPlayer::get_current_subtitle_track() const {
+    return static_cast<int>(get_property_int("sid", 0));
+}
+
+void MPVPlayer::set_subtitle_track(int track_id) {
+    set_property_int("sid", track_id);
+}
+
+void MPVPlayer::toggle_subtitles() {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    const char* cmd[] = {"cycle", "sub-visibility", nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+// ==================== Video Properties ====================
+
+String MPVPlayer::get_media_title() const {
+    return get_property_string("media-title", "");
+}
+
+int MPVPlayer::get_video_width() const {
+    return static_cast<int>(get_property_int("width", 0));
+}
+
+int MPVPlayer::get_video_height() const {
+    return static_cast<int>(get_property_int("height", 0));
+}
+
+double MPVPlayer::get_fps() const {
+    return get_property_double("container-fps", 0.0);
+}
+
+String MPVPlayer::get_video_codec() const {
+    return get_property_string("video-codec", "");
+}
+
+String MPVPlayer::get_audio_codec() const {
+    return get_property_string("audio-codec", "");
+}
+
+// ==================== Screenshot ====================
+
+void MPVPlayer::screenshot(const String& filename, bool subtitles) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    
+    const char* cmd[4];
+    cmd[0] = "screenshot";
+    
+    if (filename.is_empty()) {
+        // Take screenshot with default filename
+        cmd[1] = subtitles ? "subtitles" : "video";
+        cmd[2] = nullptr;
+    } else {
+        // Take screenshot with custom filename
+        CharString cs = filename.utf8();
+        cmd[1] = subtitles ? "subtitles" : "video";
+        cmd[2] = cs.get_data();
+        cmd[3] = nullptr;
+    }
+    
+    mpv_command_async(mpv, 0, cmd);
+    
+    if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL) {
+        UtilityFunctions::print("Screenshot taken");
+    }
 }
 
 // Static callback for MPV render updates
