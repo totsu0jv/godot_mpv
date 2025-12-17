@@ -1,6 +1,7 @@
 godot-cpp-build/
 CMakeFiles/
 build/
+build-android/
 bin/
 vcpkg_installed/
 x64/

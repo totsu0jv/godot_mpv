@@ -23,8 +23,9 @@ void* load_func(const char* name) {
 void MPVPlayer::_bind_methods() {
     // Register methods
     ClassDB::bind_method(D_METHOD("initialize"), &MPVPlayer::initialize);
-    ClassDB::bind_method(D_METHOD("load_file", "path"), &MPVPlayer::load_file);
+    ClassDB::bind_method(D_METHOD("load_file", "path", "headers"), &MPVPlayer::load_file);
     ClassDB::bind_method(D_METHOD("play"), &MPVPlayer::play);
+    ClassDB::bind_method(D_METHOD("set_volume", "value"), &MPVPlayer::set_volume);
     ClassDB::bind_method(D_METHOD("pause"), &MPVPlayer::pause);
     ClassDB::bind_method(D_METHOD("stop"), &MPVPlayer::stop);
     
@@ -72,8 +73,8 @@ MPVPlayer::MPVPlayer() :
     mpv_ctx(nullptr),
     fbo(0),
     texture(0),
-    width(1280),
-    height(720),
+    width(1920),
+    height(1080),
     video_mesh(nullptr),
     video_mesh_3d(nullptr),
     running(false),
@@ -217,12 +218,12 @@ bool MPVPlayer::initialize() {
     
     // Set basic MPV options
     mpv_set_option_string(mpv, "vo", "libmpv");
-    mpv_set_option_string(mpv, "hwdec", "sw");
+    mpv_set_option_string(mpv, "hwdec", "auto-safe");
     mpv_set_option_string(mpv, "video-sync", "display");
     
     // Set network-related options for better HTTP streaming support
     mpv_set_option_string(mpv, "network-timeout", "15"); // 15 seconds timeout
-    mpv_set_option_string(mpv, "user-agent", "Mozilla/5.0 Godot/MPV Player"); // Set a user agent
+    mpv_set_option_string(mpv, "user-agent", "Mozilla/5.0 Godot/MPV Player");
     
     // Enable verbose logging in debug mode
     if (debug_level == DEBUG_FULL) {
@@ -578,7 +579,7 @@ void MPVPlayer::_process(double delta) {
     }
 }
 
-void MPVPlayer::load_file(const String& path) {
+void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path) {
     UtilityFunctions::print("Loading video: ", path);
     
     // Check if MPV is initialized
@@ -599,6 +600,9 @@ void MPVPlayer::load_file(const String& path) {
         
         // Set streaming-specific options for MPV
         // These match closer to command-line mpv defaults
+        std::string yt_dlp_full_str = "ytdl_hook-ytdl_path=";
+        yt_dlp_full_str += yt_dlp_path.utf8().get_data();
+        mpv_set_option_string(mpv, "script-opts", yt_dlp_full_str.c_str());
         mpv_set_option_string(mpv, "network-timeout", "60"); // 60 seconds timeout (default in mpv)
         mpv_set_option_string(mpv, "demuxer-readahead-secs", "20"); // Read ahead 20 seconds
         mpv_set_option_string(mpv, "cache", "yes"); // Enable cache
@@ -608,6 +612,8 @@ void MPVPlayer::load_file(const String& path) {
         // Set these to match command-line behavior
         mpv_set_option_string(mpv, "audio-file-auto", "no"); // Don't load external audio
         mpv_set_option_string(mpv, "sub-auto", "no"); // Don't load subtitles
+
+        mpv_set_option_string(mpv, "stream-lavf-o", headers.utf8().get_data());
         
         UtilityFunctions::print("Applied streaming-specific MPV options");
     } else {
@@ -653,6 +659,15 @@ void MPVPlayer::play() {
     UtilityFunctions::print("Starting playback");
     
     const char* cmd[] = {"set", "pause", "no", nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::set_volume(String value) {
+        if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"set", "volume", value.utf8().get_data(), nullptr};
     mpv_command_async(mpv, 0, cmd);
 }
 

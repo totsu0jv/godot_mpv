@@ -85,7 +85,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         ${GODOT_CPP_PATH}/include
         src
     )
-else()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
     add_library(glad_gles2 SHARED
         "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
@@ -116,6 +116,36 @@ else()
     target_include_directories(${PROJECT_NAME} PRIVATE 
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/dependencies/glad
+        ${GODOT_CPP_PATH}/include
+        src
+    )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    add_library(glad STATIC
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
+    )
+
+    target_include_directories(glad PUBLIC
+    "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
+    )
+    link_directories(${CMAKE_SOURCE_DIR}/dependencies/aarch64/mpv)
+
+    add_library(${PROJECT_NAME} SHARED ${SOURCES})
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        godot-cpp
+        glad
+        mpv
+        EGL
+        GLESv3
+        )
+
+    # Compiler settings
+    target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
+
+    target_include_directories(${PROJECT_NAME} PRIVATE 
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/dependencies/glad
+        ${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/include
         ${GODOT_CPP_PATH}/include
         src
     )
