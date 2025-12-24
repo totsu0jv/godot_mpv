@@ -600,9 +600,12 @@ void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path
         
         // Set streaming-specific options for MPV
         // These match closer to command-line mpv defaults
-        std::string yt_dlp_full_str = "ytdl_hook-ytdl_path=";
-        yt_dlp_full_str += yt_dlp_path.utf8().get_data();
-        mpv_set_option_string(mpv, "script-opts", yt_dlp_full_str.c_str());
+        if(!yt_dlp_path.is_empty()) {
+            std::string yt_dlp_full_str = "ytdl_hook-ytdl_path=";
+            yt_dlp_full_str += yt_dlp_path.utf8().get_data();
+            mpv_set_option_string(mpv, "script-opts", yt_dlp_full_str.c_str());
+        }
+
         mpv_set_option_string(mpv, "network-timeout", "60"); // 60 seconds timeout (default in mpv)
         mpv_set_option_string(mpv, "demuxer-readahead-secs", "20"); // Read ahead 20 seconds
         mpv_set_option_string(mpv, "cache", "yes"); // Enable cache
@@ -610,8 +613,8 @@ void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path
         mpv_set_option_string(mpv, "force-seekable", "yes"); // Try to make stream seekable
         
         // Set these to match command-line behavior
-        mpv_set_option_string(mpv, "audio-file-auto", "no"); // Don't load external audio
-        mpv_set_option_string(mpv, "sub-auto", "no"); // Don't load subtitles
+        // mpv_set_option_string(mpv, "audio-file-auto", "no"); // Don't load external audio
+        // mpv_set_option_string(mpv, "sub-auto", "no"); // Don't load subtitles
 
         mpv_set_option_string(mpv, "stream-lavf-o", headers.utf8().get_data());
         
