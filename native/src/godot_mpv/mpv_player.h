@@ -69,8 +69,8 @@ private:
     // Frame data
     PackedByteArray pixel_data;
     PackedByteArray pending_frame_data;
-    int width = 1280;
-    int height = 720;
+    int width;
+    int height;
     
     // Streaming support
     bool is_streaming = false;
@@ -97,8 +97,18 @@ public:
     
     // Load and play a video file
     void load_file(const String& path, String headers, String yt_dlp_path);
+    void set_resolution(int new_width, int new_height);
+    double get_content_aspect_ratio();
     void play();
     void set_volume(String value);
+    void set_aspect_ratio(String ratio);
+    void restart();
+    void set_audio_track(String id);
+    void set_subtitle_track(String id);
+    void set_playback_speed(String speed);
+    void set_repeat_file(String value);
+    void set_time_pos(double pos);
+    void seek_content_pos(String pos);
     void pause();
     void stop();
 

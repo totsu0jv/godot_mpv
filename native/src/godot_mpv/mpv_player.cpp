@@ -26,7 +26,16 @@ void MPVPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("load_file", "path", "headers"), &MPVPlayer::load_file);
     ClassDB::bind_method(D_METHOD("play"), &MPVPlayer::play);
     ClassDB::bind_method(D_METHOD("set_volume", "value"), &MPVPlayer::set_volume);
+    ClassDB::bind_method(D_METHOD("set_audio_track", "id"), &MPVPlayer::set_audio_track);
+    ClassDB::bind_method(D_METHOD("set_subtitle_track", "id"), &MPVPlayer::set_subtitle_track);
+    ClassDB::bind_method(D_METHOD("seek_content_pos", "pos"), &MPVPlayer::seek_content_pos);
+    ClassDB::bind_method(D_METHOD("set_time_pos", "pos"), &MPVPlayer::set_time_pos);
+    ClassDB::bind_method(D_METHOD("set_resolution", "new_width", "new_height"), &MPVPlayer::set_resolution);
+    ClassDB::bind_method(D_METHOD("set_aspect_ratio", "ratio"), &MPVPlayer::set_aspect_ratio);
+    ClassDB::bind_method(D_METHOD("set_playback_speed", "speed"), &MPVPlayer::set_playback_speed);
+    ClassDB::bind_method(D_METHOD("set_repeat_file", "value"), &MPVPlayer::set_repeat_file);
     ClassDB::bind_method(D_METHOD("pause"), &MPVPlayer::pause);
+    ClassDB::bind_method(D_METHOD("restart"), &MPVPlayer::pause); 
     ClassDB::bind_method(D_METHOD("stop"), &MPVPlayer::stop);
     
     // Video mesh methods
@@ -40,13 +49,14 @@ void MPVPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_texture"), &MPVPlayer::get_texture);
     ClassDB::bind_method(D_METHOD("get_width"), &MPVPlayer::get_width);
     ClassDB::bind_method(D_METHOD("get_height"), &MPVPlayer::get_height);
+    ClassDB::bind_method(D_METHOD("get_content_aspect_ratio"), &MPVPlayer::get_content_aspect_ratio);
 
     // Setters
     ClassDB::bind_method(D_METHOD("set_debug_level"), &MPVPlayer::set_debug_level);
     
     // Register signals
     ADD_SIGNAL(MethodInfo("texture_updated", PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D")));
-
+    ADD_SIGNAL(MethodInfo("time_changed", PropertyInfo(Variant::FLOAT, "time_pos")));
 }
 
 // Static callback for MPV render updates
@@ -205,6 +215,11 @@ void MPVPlayer::_notification(int p_what) {
     }
 }
 
+void MPVPlayer::set_resolution(int new_width, int new_height) {
+    this->width = new_width;
+    this->height = new_height;
+}
+
 bool MPVPlayer::initialize() {
     if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
     UtilityFunctions::print("Starting MPV player initialization");
@@ -238,12 +253,14 @@ bool MPVPlayer::initialize() {
         return false;
     }
     
-    // Set up property observation for debugging
-    if (debug_level == DEBUG_FULL) {
-        // Observe network-related properties
-        mpv_observe_property(mpv, 0, "demuxer-cache-state", MPV_FORMAT_NODE);
-        mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
-    }
+    // // Set up property observation for debugging
+    // if (debug_level == DEBUG_FULL) {
+    //     // Observe network-related properties
+    //     mpv_observe_property(mpv, 0, "demuxer-cache-state", MPV_FORMAT_NODE);
+    //     mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
+    // }
+
+    mpv_observe_property(mpv, 1, "time-pos", MPV_FORMAT_DOUBLE);
     
     // Initialize OpenGL rendering
     if (!initialize_gl()) {
@@ -508,6 +525,8 @@ void MPVPlayer::_process(double delta) {
     // Make sure MPV updates its internal state
     if (mpv) {
         mpv_event* event = mpv_wait_event(mpv, 0);
+        double time_pos = 0.0;
+        double duration = 0.0;
         while (event->event_id != MPV_EVENT_NONE) {
             // Process MPV events
             switch (event->event_id) {
@@ -524,6 +543,7 @@ void MPVPlayer::_process(double delta) {
                     if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
                         UtilityFunctions::print("Playback restarted");
                     break;
+
                     
                 case MPV_EVENT_END_FILE:
                     {
@@ -567,11 +587,18 @@ void MPVPlayer::_process(double delta) {
                     }
                     break;
                     
-                case MPV_EVENT_PROPERTY_CHANGE:
-                    if(is_streaming && debug_level == DEBUG_FULL) {
-                        UtilityFunctions::print("Property changed");
+                case MPV_EVENT_PROPERTY_CHANGE: {
+                    mpv_event_property *prop = static_cast<mpv_event_property *>(event->data);
+                    if (!prop || !prop->data) break;
+                    switch (event->reply_userdata)
+                    {
+                    case 1:
+                        time_pos = *static_cast<double *>(prop->data);
+                        call_deferred("emit_signal", "time_changed", time_pos);
+                        break;
                     }
                     break;
+                    }
             }
             
             event = mpv_wait_event(mpv, 0);
@@ -609,8 +636,11 @@ void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path
         mpv_set_option_string(mpv, "network-timeout", "60"); // 60 seconds timeout (default in mpv)
         mpv_set_option_string(mpv, "demuxer-readahead-secs", "20"); // Read ahead 20 seconds
         mpv_set_option_string(mpv, "cache", "yes"); // Enable cache
-        mpv_set_option_string(mpv, "cache-secs", "30"); // Cache 30 seconds (more generous)
+        mpv_set_option_string(mpv, "cache-secs", "15"); // Cache 30 seconds (more generous)
         mpv_set_option_string(mpv, "force-seekable", "yes"); // Try to make stream seekable
+        mpv_set_option_string(mpv, "hr-seek", "yes");
+        mpv_set_option_string(mpv, "hr-seek-demuxer-offset", "1.5");
+        mpv_set_option_string(mpv, "stream-buffer-size", "10M");
         
         // Set these to match command-line behavior
         // mpv_set_option_string(mpv, "audio-file-auto", "no"); // Don't load external audio
@@ -672,6 +702,90 @@ void MPVPlayer::set_volume(String value) {
     }
     const char* cmd[] = {"set", "volume", value.utf8().get_data(), nullptr};
     mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::set_aspect_ratio(String ratio) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"set", "video-aspect-override", ratio.utf8().get_data(), nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::set_playback_speed(String speed) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"set", "speed", speed.utf8().get_data(), nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::set_repeat_file(String value) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"set", "loop-file", value.utf8().get_data(), nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::restart() {
+        if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"seek", "0", "absolute", nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::set_audio_track(String id) {
+        if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"set", "aid", id.utf8().get_data(), nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+void MPVPlayer::set_subtitle_track(String id) {
+        if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* cmd[] = {"set", "sid", id.utf8().get_data(), nullptr};
+    mpv_command_async(mpv, 0, cmd);
+}
+
+double MPVPlayer::get_content_aspect_ratio() {
+    int width;
+    int height;
+    double aspect;
+
+    mpv_get_property(mpv, "video-params/w", MPV_FORMAT_INT64, &width);
+    mpv_get_property(mpv, "video-params/h", MPV_FORMAT_INT64, &height);
+
+    return aspect = (double)width / (double)height;
+}
+
+void MPVPlayer::seek_content_pos(String pos) {
+        if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* seek_cmd[] = {"seek", pos.utf8().get_data(), "absolute", nullptr};
+    mpv_command(mpv, seek_cmd);
+}
+
+void MPVPlayer::set_time_pos(double pos) {
+        if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    mpv_set_property_string(mpv, "pause", "yes");
+    mpv_set_property_async(mpv, 0, "time-pos", MPV_FORMAT_DOUBLE, &pos);
+    mpv_set_property_string(mpv, "pause", "no");
 }
 
 void MPVPlayer::pause() {
