@@ -100,57 +100,48 @@ cmake --build ./build -j4
 ---
 ## Windows
 <strong>Requirements</strong>
-- GCC compiler for windows (can be downloaded [here](https://winlibs.com))
+- MSYS2 (MinGW64) compiler
 - A compiled version of libmpv <em> (you can find one here [sourceforge](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/))</em>
-- ANGLE (for EGL and GLES2 headers) <em>(will be installed in the project when you use ```CMake .``` command)</em>
-- vcpkg (to retrieve ANGLE library)
+- ANGLE (for EGL and GLES2 headers)
 - GLAD (to load OpenGL and use EGL/GLES2 headers, use the generator [here](https://gen.glad.sh/))
 > GLAD configuration: 
 > EGL 1.5 
 > GLES2 3.2
 > ✅ Loader
-- CMake for project compilation <em>([CMake download page](https://cmake.org/download/))</em>
+- CMake for project compilation
 
 ### <em>build steps</em>
-GCC compiler setup (if you don't have it)
-- Download and extract the archive found in the website linked above (any version > GCC 12)
-- Type "Env" in windows search and click on "edit system environment variables"
-- Click on "environment variables"
-- Look in "system variables" for your "Path" variable
-- Add a new line to this variable
-- Copy and paste the path to the previously extracted gcc compiler (we want to target the bin/ folder) for example ```C:\mingw64\bin```
-
-Install CMake (link above)
-
+Install CMake
+```MSYS2 MinGW64
+pacman -S mingw-w64-x86_64-cmake
+```
+Install ANGLE lib
+```MSYS2 MinGW64
+pacman -S mingw-w64-x86_64-angleproject
+```
 Clone the project
-```powershell
+```MSYS2 MinGW64
 git clone git@github.com:VersaYT/godot_mpv.git
 ```
-Pull vcpkg submodule
-```powershell
-cd godot_mpv
-git submodule update --init
-```
 cd into dependencies folder
-```powershell
+```MSYS2 MinGW64
 cd dependencies
 ```
 Download libmpv and GLAD from the links above
 - Create an ```mpv-dev``` folder and extract the content of downloaded mpv into it
 - Create a ```glad``` folder and extract content of downloaded GLAD into it
 
-
-From powershell, make sure CMake and GCC are working
-```powershell
+From MSYS2 MinGW64, make sure CMake and GCC are working
+```MSYS2 MinGW64
 cmake --version
 gcc --version
 ```
 cd at the root directory of the project
 Configure CMake for the project
-```powershell
-cmake . -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
+```MSYS2 MinGW64
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug
 ```
 Compile the project (you can of course allow more threads when compiling "-j8")
-```powershell
-mingw32-make -j4
+```MSYS2 MinGW64
+cmake --build build -j4
 ```

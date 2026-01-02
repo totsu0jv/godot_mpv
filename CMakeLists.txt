@@ -1,21 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake"
-    CACHE STRING "Vcpkg toolchain file")
-
-set(VCPKG_MANIFEST_MODE ON)
-endif()
-
 project(godot_mpv)
 
 # Replace with your Godot 4.x install path
 set(GODOT_CPP_PATH "engine/godot-cpp")
 set(PROJECT_NAME godot_mpv)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-find_package(unofficial-angle REQUIRED CONFIG)
-endif()
 
 # Detect platform
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
@@ -70,16 +58,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(${PROJECT_NAME} PRIVATE
         godot-cpp
         "${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/libmpv.dll.a"
-        unofficial::angle::libGLESv2
-        unofficial::angle::libEGL
         glad_gles2
         glad_egl
+        EGL
+        GLESv2
         )
 
     # Compiler settings
     target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
     target_include_directories(${PROJECT_NAME} PRIVATE 
         ${CMAKE_SOURCE_DIR}
+        ${CMAKE_INSTALL_PREFIX}/include
         ${CMAKE_SOURCE_DIR}/dependencies/glad
         ${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/include
         ${GODOT_CPP_PATH}/include

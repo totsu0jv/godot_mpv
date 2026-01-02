@@ -396,18 +396,13 @@ void MPVPlayer::render_loop() {
     // It avoids any direct OpenGL operations that might cause thread safety issues
     
     while (running.load()) {
-        // Check if MPV needs rendering
-        if (frame_available.load()) {
-            frame_available.store(false);
-            
-            // Signal the main thread that we need to update the texture
-            // The actual rendering will be done in the main thread
+        if (frame_available.exchange(false)) {
             texture_needs_update.store(true);
         }
-        
-        // Sleep to avoid busy waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS
-    }
+            
+            // Sleep to avoid busy waiting
+            // std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS
+        }
 }
 
 void MPVPlayer::update_texture() {
