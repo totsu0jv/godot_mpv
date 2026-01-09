@@ -30,7 +30,8 @@ void MPVPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("seek_content_pos", "pos"), &MPVPlayer::seek_content_pos);
     ClassDB::bind_method(D_METHOD("seek", "seconds", "relative"), &MPVPlayer::seek);
     ClassDB::bind_method(D_METHOD("seek_to_percentage", "pos"), &MPVPlayer::seek_to_percentage);
-    
+    ClassDB::bind_method(D_METHOD("add_subtitle_file", "path", "title", "lang"), &MPVPlayer::add_subtitle_file, DEFVAL(""), DEFVAL(""));
+
     ClassDB::bind_method(D_METHOD("set_time_pos", "pos"), &MPVPlayer::set_time_pos);
     ClassDB::bind_method(D_METHOD("set_resolution", "new_width", "new_height"), &MPVPlayer::set_resolution);
     ClassDB::bind_method(D_METHOD("set_target_texture_rect", "rect"), &MPVPlayer::set_target_texture_rect);
@@ -39,6 +40,7 @@ void MPVPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_aspect_ratio", "ratio"), &MPVPlayer::set_aspect_ratio);
     ClassDB::bind_method(D_METHOD("set_playback_speed", "speed"), &MPVPlayer::set_playback_speed);
     ClassDB::bind_method(D_METHOD("set_repeat_file", "value"), &MPVPlayer::set_repeat_file);
+    ClassDB::bind_method(D_METHOD("set_native_subtitles_enabled", "enabled"), &MPVPlayer::set_native_subtitles_enabled);
     ClassDB::bind_method(D_METHOD("pause"), &MPVPlayer::pause);
     ClassDB::bind_method(D_METHOD("restart"), &MPVPlayer::pause); 
     ClassDB::bind_method(D_METHOD("stop"), &MPVPlayer::stop);
@@ -62,9 +64,18 @@ void MPVPlayer::_bind_methods() {
     // Setters
     ClassDB::bind_method(D_METHOD("set_debug_level"), &MPVPlayer::set_debug_level);
     
+    ClassDB::bind_method(D_METHOD("set_subtitle_delay", "seconds"), &MPVPlayer::set_subtitle_delay);
+    ClassDB::bind_method(D_METHOD("get_subtitle_delay"), &MPVPlayer::get_subtitle_delay);
+
+
     // Register signals
     ADD_SIGNAL(MethodInfo("texture_updated", PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D")));
     ADD_SIGNAL(MethodInfo("time_changed", PropertyInfo(Variant::FLOAT, "time_pos")));
+
+    ADD_SIGNAL(MethodInfo("buffering_started"));
+    ADD_SIGNAL(MethodInfo("buffering_ended"));
+
+    ADD_SIGNAL(MethodInfo("subtitle_changed", PropertyInfo(Variant::STRING, "text")));
 
     // Loading signals
     ADD_SIGNAL(MethodInfo("loading_started"));
@@ -149,11 +160,14 @@ MPVPlayer::MPVPlayer() :
     texture_needs_update(false),
     has_new_frame(false),
     is_streaming(false),
+	native_subtitles_enabled(false),
+	last_subtitle_text(""),
     frame_count(0),
     stream_frame_threshold(30), // Allow up to 30 black frames for streaming
     egl_display(EGL_NO_DISPLAY),
     egl_surface(EGL_NO_SURFACE),
-    egl_context(EGL_NO_CONTEXT) {
+    egl_context(EGL_NO_CONTEXT),
+    is_buffering(false) {
     
     g_instance = this;
     
@@ -300,6 +314,7 @@ bool MPVPlayer::initialize() {
     // Set basic MPV options
     mpv_set_option_string(mpv, "vo", "libmpv");
     mpv_set_option_string(mpv, "hwdec", "auto-safe");
+    mpv_set_option_string(mpv, "profile", "fast");
     mpv_set_option_string(mpv, "video-sync", "display");
     
     // Set network-related options for better HTTP streaming support
@@ -327,7 +342,10 @@ bool MPVPlayer::initialize() {
     // }
 
     mpv_observe_property(mpv, 1, "time-pos", MPV_FORMAT_DOUBLE);
-    
+    mpv_observe_property(mpv, 2, "paused-for-cache", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv, 3, "core-idle", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv, 4, "sub-text", MPV_FORMAT_STRING);
+
     // Initialize OpenGL rendering
     if (!initialize_gl()) {
         UtilityFunctions::print("Failed to initialize OpenGL");
@@ -665,6 +683,49 @@ void MPVPlayer::_process(double delta) {
                         time_pos = *static_cast<double *>(prop->data);
                         call_deferred("emit_signal", "time_changed", time_pos);
                         break;
+                    case 2: {
+                            bool paused_for_cache = *static_cast<int *>(prop->data) != 0;
+                            if (paused_for_cache && !is_buffering) {
+                                is_buffering = true;
+                                call_deferred("emit_signal", "buffering_started");
+                            } else if (!paused_for_cache && is_buffering) {
+                                is_buffering = false;
+                                call_deferred("emit_signal", "buffering_ended");
+							}
+                            break;
+                    }
+					case 3: {
+                           bool core_idle = *static_cast<int*>(prop->data);
+                           if (core_idle && !is_buffering) {
+                               is_buffering = true;
+                               call_deferred("emit_signal", "buffering_started");
+                           }
+                           else if (!core_idle && is_buffering) {
+                               is_buffering = false;
+                               call_deferred("emit_signal", "buffering_ended");
+                           }
+                           break;
+                    }
+                    case 4: {
+                        if (prop->format == MPV_FORMAT_STRING && prop->data) {
+                            char* sub_text = *static_cast<char**>(prop->data);
+                            if (sub_text != nullptr) {
+                                String subtitle_text = String::utf8(sub_text);
+                                // Only emit if text changed to avoid spam
+                                if (subtitle_text != last_subtitle_text) {
+                                    last_subtitle_text = subtitle_text;
+                                    call_deferred("emit_signal", "subtitle_changed", subtitle_text);
+                                }
+                            }
+                        }
+                        else {
+                            // No subtitle or subtitle cleared
+                            if (!last_subtitle_text.is_empty()) {
+                                last_subtitle_text = "";
+                                call_deferred("emit_signal", "subtitle_changed", String(""));
+                            }
+                        }
+                          }
                     }
                     break;
                     }
@@ -824,6 +885,39 @@ void MPVPlayer::set_subtitle_track(String id) {
     mpv_command_async(mpv, 0, cmd);
 }
 
+void MPVPlayer::add_subtitle_file(String path, String title, String lang) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+
+    CharString cs = path.utf8();
+    const char* c_path = cs.get_data();
+
+    if (c_path == nullptr || c_path[0] == '\0') {
+        UtilityFunctions::print("ERROR: Invalid empty subtitle path");
+        return;
+    }
+
+    if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
+        UtilityFunctions::print("Adding external subtitle file: ", path);
+
+
+    CharString title_cs = title.utf8();
+    CharString lang_cs = lang.utf8();
+    const char* cmd[] = { "sub-add", c_path, "auto", title_cs.get_data(), lang_cs.get_data(), nullptr };
+    int result = mpv_command(mpv, cmd);
+
+    if (result < 0) {
+        UtilityFunctions::print("Error loading subtitle file: ", mpv_error_string(result));
+    }
+    else {
+        if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
+            UtilityFunctions::print("Subtitle file loaded successfully");
+    }
+}
+
+
 double MPVPlayer::get_content_aspect_ratio() {
     int width;
     int height;
@@ -958,10 +1052,10 @@ Array MPVPlayer::get_audio_tracks() {
                 track_info["id"] = (int)value->u.int64;
             }
             else if (strcmp(key, "lang") == 0 && value->format == MPV_FORMAT_STRING) {
-                track_info["lang"] = String(value->u.string);
+                track_info["lang"] = String::utf8(value->u.string);
             }
             else if (strcmp(key, "title") == 0 && value->format == MPV_FORMAT_STRING) {
-                track_info["title"] = String(value->u.string);
+                track_info["title"] = String::utf8(value->u.string);
             }
             else if (strcmp(key, "selected") == 0 && value->format == MPV_FORMAT_FLAG) {
                 track_info["selected"] = (bool)value->u.flag;
@@ -1015,10 +1109,10 @@ Array MPVPlayer::get_subtitle_tracks() {
                 track_info["id"] = (int)value->u.int64;
             }
             else if (strcmp(key, "lang") == 0 && value->format == MPV_FORMAT_STRING) {
-                track_info["lang"] = String(value->u.string);
+                track_info["lang"] = String::utf8(value->u.string);
             }
             else if (strcmp(key, "title") == 0 && value->format == MPV_FORMAT_STRING) {
-                track_info["title"] = String(value->u.string);
+                track_info["title"] = String::utf8(value->u.string);
             }
             else if (strcmp(key, "selected") == 0 && value->format == MPV_FORMAT_FLAG) {
                 track_info["selected"] = (bool)value->u.flag;
@@ -1032,4 +1126,42 @@ Array MPVPlayer::get_subtitle_tracks() {
 
     mpv_free_node_contents(&track_list);
     return tracks;
+}
+
+void MPVPlayer::set_native_subtitles_enabled(bool enabled) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+
+    native_subtitles_enabled = enabled;
+
+    if (enabled) {
+        // Show native subtitles
+        mpv_set_option_string(mpv, "sub-visibility", "yes");
+    }
+    else {
+        // Hide native subtitles (but still emit subtitle_changed signal)
+        mpv_set_option_string(mpv, "sub-visibility", "no");
+    }
+}
+
+void MPVPlayer::set_subtitle_delay(String seconds) {
+    if (!mpv) {
+        UtilityFunctions::print("MPV not initialized");
+        return;
+    }
+
+    //mpv_set_property_string(mpv, "sub-delay", seconds);
+
+    const char* cmd[] = { "set", "sub-delay", seconds.utf8().get_data(), nullptr };
+    mpv_command_async(mpv, 0, cmd);
+
+    if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL) {
+        UtilityFunctions::print("Subtitle delay set to: ", seconds, " seconds");
+    }
+}
+
+double MPVPlayer::get_subtitle_delay() const {
+    return get_property_double("sub-delay", 0.0);
 }

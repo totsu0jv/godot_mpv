@@ -75,7 +75,10 @@ private:
     int frame_count = 0;
     int stream_frame_threshold = 30; // Allow up to 30 black frames for streaming
     bool had_visible_content = false; // Track if we've seen non-black content
-    
+    bool is_buffering = false; // Track current buffering state
+    bool native_subtitles_enabled = false; // Toggle for native subtitle rendering
+    String last_subtitle_text = ""; // Cache last subtitle text to avoid duplicate signals
+
 protected:
     static void _bind_methods();
     virtual void _notification(int p_what);
@@ -101,6 +104,11 @@ public:
     Array get_audio_tracks();
     Array get_subtitle_tracks();
 
+    void set_native_subtitles_enabled(bool enabled);
+
+    void set_subtitle_delay(String seconds);
+    double get_subtitle_delay() const;
+
     // Set the target TextureRect
     void set_target_texture_rect(TextureRect* rect);
     
@@ -112,6 +120,7 @@ public:
     void restart();
     void set_audio_track(String id);
     void set_subtitle_track(String id);
+    void add_subtitle_file(String path, String title, String lang);
     void set_playback_speed(String speed);
     void set_repeat_file(String value);
     void set_time_pos(double pos);
