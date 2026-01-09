@@ -3,14 +3,12 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/node.hpp>
-#include <godot_cpp/classes/mesh_instance2d.hpp>
-#include <godot_cpp/classes/mesh_instance3d.hpp>
+#include <godot_cpp/classes/texture_rect.hpp>
+#include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/sub_viewport.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
-#include <godot_cpp/classes/plane_mesh.hpp>
-#include <godot_cpp/classes/shader_material.hpp>
-#include <godot_cpp/classes/canvas_item_material.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <mpv/client.h>
@@ -55,8 +53,8 @@ private:
     // Godot resources
     Ref<Image> frame_image;
     Ref<ImageTexture> frame_texture;
-    MeshInstance2D* video_mesh = nullptr;
-    MeshInstance3D* video_mesh_3d = nullptr;
+    TextureRect* target_texture_rect = nullptr;
+
     
     // Thread management
     std::thread render_thread;
@@ -96,11 +94,20 @@ public:
     bool initialize();
     
     // Load and play a video file
-    void load_file(const String& path, String headers, String yt_dlp_path);
+    void load_file(const String& path);
     void set_resolution(int new_width, int new_height);
+
+    // Get track information
+    Array get_audio_tracks();
+    Array get_subtitle_tracks();
+
+    // Set the target TextureRect
+    void set_target_texture_rect(TextureRect* rect);
+    
     double get_content_aspect_ratio();
     void play();
     void set_volume(String value);
+    double get_volume() const;
     void set_aspect_ratio(String ratio);
     void restart();
     void set_audio_track(String id);
@@ -109,20 +116,17 @@ public:
     void set_repeat_file(String value);
     void set_time_pos(double pos);
     void seek_content_pos(String pos);
+    void seek(String seconds, bool relative);
+    void seek_to_percentage(String pos);
     void pause();
     void stop();
 
-    // Create a video mesh for 2D display
-    MeshInstance2D* create_video_mesh_2d();
-    
-    // Create a video mesh for 3D display
-    MeshInstance3D* create_video_mesh_3d();
-    
-    // Apply video texture to an existing 3D mesh
-    void apply_to_mesh_3d(MeshInstance3D* mesh_instance);
-    
-    // Apply video texture to a SubViewport
-    void apply_to_viewport(SubViewport* viewport);
+    // Playback state queries
+    bool is_playing() const;
+    bool is_paused() const;
+    double get_time_pos() const;
+    double get_duration() const;
+    double get_percentage_pos() const;
     
     // Get the current frame texture
     Ref<Texture2D> get_texture() const;
@@ -154,6 +158,12 @@ private:
     
     // MPV render update callback
     static void on_mpv_render_update(void* ctx);
+
+    // Helper methods for MPV property access
+    double get_property_double(const char* name, double default_value = 0.0) const;
+    int64_t get_property_int(const char* name, int64_t default_value = 0) const;
+    String get_property_string(const char* name, const String& default_value = "") const;
+    bool get_property_bool(const char* name, bool default_value = false) const;
     
     // Render loop (runs in a separate thread)
     void render_loop();

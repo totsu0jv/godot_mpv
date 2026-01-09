@@ -4,8 +4,6 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
-#include <godot_cpp/classes/quad_mesh.hpp>
-#include <godot_cpp/classes/shader_material.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -23,26 +21,36 @@ void* load_func(const char* name) {
 void MPVPlayer::_bind_methods() {
     // Register methods
     ClassDB::bind_method(D_METHOD("initialize"), &MPVPlayer::initialize);
-    ClassDB::bind_method(D_METHOD("load_file", "path", "headers"), &MPVPlayer::load_file);
+    ClassDB::bind_method(D_METHOD("load_file"), &MPVPlayer::load_file);
     ClassDB::bind_method(D_METHOD("play"), &MPVPlayer::play);
     ClassDB::bind_method(D_METHOD("set_volume", "value"), &MPVPlayer::set_volume);
+    ClassDB::bind_method(D_METHOD("get_volume"), &MPVPlayer::get_volume);
     ClassDB::bind_method(D_METHOD("set_audio_track", "id"), &MPVPlayer::set_audio_track);
     ClassDB::bind_method(D_METHOD("set_subtitle_track", "id"), &MPVPlayer::set_subtitle_track);
     ClassDB::bind_method(D_METHOD("seek_content_pos", "pos"), &MPVPlayer::seek_content_pos);
+    ClassDB::bind_method(D_METHOD("seek", "seconds", "relative"), &MPVPlayer::seek);
+    ClassDB::bind_method(D_METHOD("seek_to_percentage", "pos"), &MPVPlayer::seek_to_percentage);
+    
     ClassDB::bind_method(D_METHOD("set_time_pos", "pos"), &MPVPlayer::set_time_pos);
     ClassDB::bind_method(D_METHOD("set_resolution", "new_width", "new_height"), &MPVPlayer::set_resolution);
+    ClassDB::bind_method(D_METHOD("set_target_texture_rect", "rect"), &MPVPlayer::set_target_texture_rect);
+    ClassDB::bind_method(D_METHOD("get_audio_tracks"), &MPVPlayer::get_audio_tracks);
+    ClassDB::bind_method(D_METHOD("get_subtitle_tracks"), &MPVPlayer::get_subtitle_tracks);
     ClassDB::bind_method(D_METHOD("set_aspect_ratio", "ratio"), &MPVPlayer::set_aspect_ratio);
     ClassDB::bind_method(D_METHOD("set_playback_speed", "speed"), &MPVPlayer::set_playback_speed);
     ClassDB::bind_method(D_METHOD("set_repeat_file", "value"), &MPVPlayer::set_repeat_file);
     ClassDB::bind_method(D_METHOD("pause"), &MPVPlayer::pause);
     ClassDB::bind_method(D_METHOD("restart"), &MPVPlayer::pause); 
     ClassDB::bind_method(D_METHOD("stop"), &MPVPlayer::stop);
-    
-    // Video mesh methods
-    ClassDB::bind_method(D_METHOD("create_video_mesh_2d"), &MPVPlayer::create_video_mesh_2d);
-    ClassDB::bind_method(D_METHOD("create_video_mesh_3d"), &MPVPlayer::create_video_mesh_3d);
-    ClassDB::bind_method(D_METHOD("apply_to_mesh_3d", "mesh_instance"), &MPVPlayer::apply_to_mesh_3d);
-    ClassDB::bind_method(D_METHOD("apply_to_viewport", "viewport"), &MPVPlayer::apply_to_viewport);
+
+
+    // Playback state
+    ClassDB::bind_method(D_METHOD("is_playing"), &MPVPlayer::is_playing);
+    ClassDB::bind_method(D_METHOD("is_paused"), &MPVPlayer::is_paused);
+    ClassDB::bind_method(D_METHOD("get_time_pos"), &MPVPlayer::get_time_pos);
+    ClassDB::bind_method(D_METHOD("get_duration"), &MPVPlayer::get_duration);
+    ClassDB::bind_method(D_METHOD("get_percentage_pos"), &MPVPlayer::get_percentage_pos);
+
     
     // Getters
     ClassDB::bind_method(D_METHOD("get_debug_level"), &MPVPlayer::get_debug_level);
@@ -57,6 +65,56 @@ void MPVPlayer::_bind_methods() {
     // Register signals
     ADD_SIGNAL(MethodInfo("texture_updated", PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D")));
     ADD_SIGNAL(MethodInfo("time_changed", PropertyInfo(Variant::FLOAT, "time_pos")));
+
+    // Loading signals
+    ADD_SIGNAL(MethodInfo("loading_started"));
+    ADD_SIGNAL(MethodInfo("loading_finished"));
+}
+
+// ==================== Helper Methods ====================
+
+double MPVPlayer::get_property_double(const char* name, double default_value) const {
+    if (!mpv) return default_value;
+
+    double value = default_value;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_DOUBLE, &value) < 0) {
+        return default_value;
+    }
+    return value;
+}
+
+
+int64_t MPVPlayer::get_property_int(const char* name, int64_t default_value) const {
+    if (!mpv) return default_value;
+
+    int64_t value = default_value;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_INT64, &value) < 0) {
+        return default_value;
+    }
+    return value;
+}
+
+String MPVPlayer::get_property_string(const char* name, const String& default_value) const {
+    if (!mpv) return default_value;
+
+    char* value = nullptr;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_STRING, &value) < 0 || !value) {
+        return default_value;
+    }
+
+    String result = String::utf8(value);
+    mpv_free(value);
+    return result;
+}
+
+bool MPVPlayer::get_property_bool(const char* name, bool default_value) const {
+    if (!mpv) return default_value;
+
+    int value = default_value ? 1 : 0;
+    if (mpv_get_property(mpv, name, MPV_FORMAT_FLAG, &value) < 0) {
+        return default_value;
+    }
+    return value != 0;
 }
 
 // Static callback for MPV render updates
@@ -85,8 +143,7 @@ MPVPlayer::MPVPlayer() :
     texture(0),
     width(1920),
     height(1080),
-    video_mesh(nullptr),
-    video_mesh_3d(nullptr),
+    target_texture_rect(nullptr),
     running(false),
     frame_available(false),
     texture_needs_update(false),
@@ -220,6 +277,15 @@ void MPVPlayer::set_resolution(int new_width, int new_height) {
     this->height = new_height;
 }
 
+void MPVPlayer::set_target_texture_rect(TextureRect* rect) {
+    target_texture_rect = rect;
+
+    // If we already have a texture, apply it immediately
+    if (target_texture_rect && frame_texture.is_valid()) {
+        target_texture_rect->set_texture(frame_texture);
+    }
+}
+
 bool MPVPlayer::initialize() {
     if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
     UtilityFunctions::print("Starting MPV player initialization");
@@ -238,7 +304,7 @@ bool MPVPlayer::initialize() {
     
     // Set network-related options for better HTTP streaming support
     mpv_set_option_string(mpv, "network-timeout", "15"); // 15 seconds timeout
-    mpv_set_option_string(mpv, "user-agent", "Mozilla/5.0 Godot/MPV Player");
+    mpv_set_option_string(mpv, "user-agent", "Stremio");
     
     // Enable verbose logging in debug mode
     if (debug_level == DEBUG_FULL) {
@@ -440,6 +506,12 @@ void MPVPlayer::_update_texture_internal() {
     if (new_texture.is_valid()) {
         frame_image = new_image;
         frame_texture = new_texture;
+
+
+        // Update the TextureRect if set
+        if (target_texture_rect) {
+            target_texture_rect->set_texture(frame_texture);
+        }
         
         // Add debug info to verify texture content
         if(debug_level == DEBUG_FULL)
@@ -532,6 +604,8 @@ void MPVPlayer::_process(double delta) {
                     // Reset frame counter and content flag when a new file is loaded
                     frame_count = 0;
                     had_visible_content = false;
+
+                    emit_signal("loading_finished");
                     break;
                     
                 case MPV_EVENT_PLAYBACK_RESTART:
@@ -601,7 +675,7 @@ void MPVPlayer::_process(double delta) {
     }
 }
 
-void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path) {
+void MPVPlayer::load_file(const String& path) {
     UtilityFunctions::print("Loading video: ", path);
     
     // Check if MPV is initialized
@@ -619,14 +693,7 @@ void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path
     
     if (is_streaming) {
         UtilityFunctions::print("Detected HTTP stream, enabling streaming mode");
-        
-        // Set streaming-specific options for MPV
-        // These match closer to command-line mpv defaults
-        if(!yt_dlp_path.is_empty()) {
-            std::string yt_dlp_full_str = "ytdl_hook-ytdl_path=";
-            yt_dlp_full_str += yt_dlp_path.utf8().get_data();
-            mpv_set_option_string(mpv, "script-opts", yt_dlp_full_str.c_str());
-        }
+     
 
         mpv_set_option_string(mpv, "network-timeout", "60"); // 60 seconds timeout (default in mpv)
         mpv_set_option_string(mpv, "demuxer-readahead-secs", "20"); // Read ahead 20 seconds
@@ -641,7 +708,7 @@ void MPVPlayer::load_file(const String& path, String headers, String yt_dlp_path
         // mpv_set_option_string(mpv, "audio-file-auto", "no"); // Don't load external audio
         // mpv_set_option_string(mpv, "sub-auto", "no"); // Don't load subtitles
 
-        mpv_set_option_string(mpv, "stream-lavf-o", headers.utf8().get_data());
+        // mpv_set_option_string(mpv, "stream-lavf-o", headers.utf8().get_data());
         
         UtilityFunctions::print("Applied streaming-specific MPV options");
     } else {
@@ -697,6 +764,10 @@ void MPVPlayer::set_volume(String value) {
     }
     const char* cmd[] = {"set", "volume", value.utf8().get_data(), nullptr};
     mpv_command_async(mpv, 0, cmd);
+}
+
+double MPVPlayer::get_volume() const {
+    return get_property_double("volume", 100.0);
 }
 
 void MPVPlayer::set_aspect_ratio(String ratio) {
@@ -773,6 +844,48 @@ void MPVPlayer::seek_content_pos(String pos) {
     mpv_command(mpv, seek_cmd);
 }
 
+
+void MPVPlayer::seek(String seconds, bool relative) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+
+    const char* seek_cmd[] = { "seek", seconds.utf8().get_data(),  relative ? "relative" : "absolute", nullptr };
+    mpv_command(mpv, seek_cmd);
+}
+
+void MPVPlayer::seek_to_percentage(String pos) {
+    if (!mpv) {
+        ERR_PRINT("MPV not initialized");
+        return;
+    }
+    const char* seek_cmd[] = { "seek", pos.utf8().get_data(), "absolute-percent", nullptr };
+    mpv_command(mpv, seek_cmd);
+}
+
+// ==================== Playback State ====================
+
+bool MPVPlayer::is_playing() const {
+    return !is_paused();
+}
+
+bool MPVPlayer::is_paused() const {
+    return get_property_bool("pause", true);
+}
+
+double MPVPlayer::get_time_pos() const {
+    return get_property_double("time-pos", 0.0);
+}
+
+double MPVPlayer::get_duration() const {
+    return get_property_double("duration", 0.0);
+}
+
+double MPVPlayer::get_percentage_pos() const {
+    return get_property_double("percent-pos", 0.0);
+}
+
 void MPVPlayer::set_time_pos(double pos) {
         if (!mpv) {
         ERR_PRINT("MPV not initialized");
@@ -803,125 +916,120 @@ void MPVPlayer::stop() {
     mpv_command_async(mpv, 0, cmd);
 }
 
-MeshInstance2D* MPVPlayer::create_video_mesh_2d() {
-    // Create a new MeshInstance2D if it doesn't exist
-    if (!video_mesh) {
-        video_mesh = memnew(MeshInstance2D);
-        
-        // Create a simple quad mesh
-        Ref<QuadMesh> quad_mesh;
-        quad_mesh.instantiate();
-        
-        // Set the mesh size based on the video dimensions
-        quad_mesh->set_size(Vector2(width, height));
-        
-        // Set the mesh on the MeshInstance2D
-        video_mesh->set_mesh(quad_mesh);
-        
-        // Create a material for the mesh
-        Ref<ShaderMaterial> material;
-        material.instantiate();
-        
-        // Set the texture on the material
-        if (frame_texture.is_valid()) {
-            material->set_shader_parameter("texture", frame_texture);
-        }
-        
-        // Set the material on the mesh
-        video_mesh->set_material(material);
-    }
-    
-    return video_mesh;
-}
-
-MeshInstance3D* MPVPlayer::create_video_mesh_3d() {
-    // Create a new MeshInstance3D if it doesn't exist
-    if (!video_mesh_3d) {
-        video_mesh_3d = memnew(MeshInstance3D);
-        
-        // Create a plane mesh
-        Ref<PlaneMesh> plane_mesh;
-        plane_mesh.instantiate();
-        
-        // Set the mesh size based on the video dimensions
-        float aspect_ratio = static_cast<float>(width) / static_cast<float>(height);
-        plane_mesh->set_size(Vector2(2.0f, 2.0f / aspect_ratio));
-        
-        // Set the mesh on the MeshInstance3D
-        video_mesh_3d->set_mesh(plane_mesh);
-        
-        // Create a material for the mesh
-        Ref<StandardMaterial3D> material;
-        material.instantiate();
-        
-        // Configure the material
-        material->set_roughness(1.0f);  // Non-reflective
-        material->set_metallic(0.0f);   // Non-metallic
-        material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);  // No lighting effects
-        
-        // Set the texture on the material
-        if (frame_texture.is_valid()) {
-            material->set_texture(StandardMaterial3D::TEXTURE_ALBEDO, frame_texture);
-        }
-        
-        // Set the material on the mesh
-        video_mesh_3d->set_surface_override_material(0, material);
-    }
-    
-    return video_mesh_3d;
-}
-
-void MPVPlayer::apply_to_mesh_3d(MeshInstance3D* mesh_instance) {
-    if (mesh_instance) {
-        // Get the material from the mesh
-        Ref<Material> material = mesh_instance->get_surface_override_material(0);
-        
-        // If no material exists, create a new one
-        if (!material.is_valid()) {
-            Ref<StandardMaterial3D> new_material;
-            new_material.instantiate();
-            
-            // Configure the material
-            new_material->set_roughness(1.0f);  // Non-reflective
-            new_material->set_metallic(0.0f);   // Non-metallic
-            new_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);  // No lighting effects
-            
-            material = new_material;
-            mesh_instance->set_surface_override_material(0, material);
-        }
-        
-        // Update the material's texture
-        if (frame_texture.is_valid()) {
-            update_3d_material_texture(material, frame_texture);
-        }
-    }
-}
-
-void MPVPlayer::apply_to_viewport(SubViewport* viewport) {
-    if (viewport && frame_texture.is_valid()) {
-        // Set the viewport's texture to the frame texture
-        // For now, we'll just print a message
-        UtilityFunctions::print("Applying texture to viewport");
-    }
-}
-
 Ref<Texture2D> MPVPlayer::get_texture() const {
     return frame_texture;
 }
 
-void MPVPlayer::update_3d_material_texture(Ref<Material> p_material, Ref<Texture2D> p_texture) {
-    if (p_material.is_null() || p_texture.is_null()) {
-        return;
+Array MPVPlayer::get_audio_tracks() {
+    Array tracks;
+
+    if (!mpv) {
+        return tracks;
     }
-    
-    // Try to cast to StandardMaterial3D
-    StandardMaterial3D* std_mat = Object::cast_to<StandardMaterial3D>(p_material.ptr());
-    if (std_mat) {
-        // Use the correct method for StandardMaterial3D
-        std_mat->set_texture(StandardMaterial3D::TEXTURE_ALBEDO, p_texture);
-        return;
+
+    mpv_node track_list;
+    if (mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &track_list) < 0) {
+        return tracks;
     }
-    
-    // If we get here, we couldn't update the material
-    UtilityFunctions::print("Warning: Could not update 3D material texture");
+
+    if (track_list.format != MPV_FORMAT_NODE_ARRAY) {
+        mpv_free_node_contents(&track_list);
+        return tracks;
+    }
+
+    for (int i = 0; i < track_list.u.list->num; i++) {
+        mpv_node* track = &track_list.u.list->values[i];
+
+        if (track->format != MPV_FORMAT_NODE_MAP) {
+            continue;
+        }
+
+        Dictionary track_info;
+        const char* type = nullptr;
+
+        for (int j = 0; j < track->u.list->num; j++) {
+            const char* key = track->u.list->keys[j];
+            mpv_node* value = &track->u.list->values[j];
+
+            if (strcmp(key, "type") == 0 && value->format == MPV_FORMAT_STRING) {
+                type = value->u.string;
+            }
+            else if (strcmp(key, "id") == 0 && value->format == MPV_FORMAT_INT64) {
+                track_info["id"] = (int)value->u.int64;
+            }
+            else if (strcmp(key, "lang") == 0 && value->format == MPV_FORMAT_STRING) {
+                track_info["lang"] = String(value->u.string);
+            }
+            else if (strcmp(key, "title") == 0 && value->format == MPV_FORMAT_STRING) {
+                track_info["title"] = String(value->u.string);
+            }
+            else if (strcmp(key, "selected") == 0 && value->format == MPV_FORMAT_FLAG) {
+                track_info["selected"] = (bool)value->u.flag;
+            }
+        }
+
+        if (type && strcmp(type, "audio") == 0) {
+            tracks.append(track_info);
+        }
+    }
+
+    mpv_free_node_contents(&track_list);
+    return tracks;
+}
+
+Array MPVPlayer::get_subtitle_tracks() {
+    Array tracks;
+
+    if (!mpv) {
+        return tracks;
+    }
+
+    mpv_node track_list;
+    if (mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &track_list) < 0) {
+        return tracks;
+    }
+
+    if (track_list.format != MPV_FORMAT_NODE_ARRAY) {
+        mpv_free_node_contents(&track_list);
+        return tracks;
+    }
+
+    for (int i = 0; i < track_list.u.list->num; i++) {
+        mpv_node* track = &track_list.u.list->values[i];
+
+        if (track->format != MPV_FORMAT_NODE_MAP) {
+            continue;
+        }
+
+        Dictionary track_info;
+        const char* type = nullptr;
+
+        for (int j = 0; j < track->u.list->num; j++) {
+            const char* key = track->u.list->keys[j];
+            mpv_node* value = &track->u.list->values[j];
+
+            if (strcmp(key, "type") == 0 && value->format == MPV_FORMAT_STRING) {
+                type = value->u.string;
+            }
+            else if (strcmp(key, "id") == 0 && value->format == MPV_FORMAT_INT64) {
+                track_info["id"] = (int)value->u.int64;
+            }
+            else if (strcmp(key, "lang") == 0 && value->format == MPV_FORMAT_STRING) {
+                track_info["lang"] = String(value->u.string);
+            }
+            else if (strcmp(key, "title") == 0 && value->format == MPV_FORMAT_STRING) {
+                track_info["title"] = String(value->u.string);
+            }
+            else if (strcmp(key, "selected") == 0 && value->format == MPV_FORMAT_FLAG) {
+                track_info["selected"] = (bool)value->u.flag;
+            }
+        }
+
+        if (type && strcmp(type, "sub") == 0) {
+            tracks.append(track_info);
+        }
+    }
+
+    mpv_free_node_contents(&track_list);
+    return tracks;
 }
