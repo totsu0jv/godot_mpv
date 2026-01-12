@@ -148,9 +148,21 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     )
 
     target_include_directories(glad PUBLIC
-    "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
     )
-    link_directories(${CMAKE_SOURCE_DIR}/dependencies/aarch64/mpv)
+    
+    # Set the correct library path based on Android ABI
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        set(MPV_LIB_PATH "${CMAKE_SOURCE_DIR}/dependencies/arm64-v8a")
+    elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+        set(MPV_LIB_PATH "${CMAKE_SOURCE_DIR}/dependencies/armeabi-v7a")
+    elseif(ANDROID_ABI STREQUAL "x86_64")
+        set(MPV_LIB_PATH "${CMAKE_SOURCE_DIR}/dependencies/x86_64")
+    else()
+        message(FATAL_ERROR "Unsupported Android ABI: ${ANDROID_ABI}")
+    endif()
+    
+    link_directories(${MPV_LIB_PATH})
 
     add_library(${PROJECT_NAME} SHARED ${SOURCES})
     target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -159,9 +171,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
         mpv
         EGL
         GLESv3
-        )
+    )
 
-    # Compiler settings
     target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 
     target_include_directories(${PROJECT_NAME} PRIVATE 
