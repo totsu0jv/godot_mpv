@@ -819,8 +819,8 @@ void MPVPlayer::play() {
 }
 
 void MPVPlayer::set_volume(String value) {
-        if (!mpv) {
-        ERR_PRINT("MPV not initialized");
+    if (!mpv) {
+        //ERR_PRINT("MPV not initialized");
         return;
     }
     const char* cmd[] = {"set", "volume", value.utf8().get_data(), nullptr};
@@ -906,15 +906,16 @@ void MPVPlayer::add_subtitle_file(String path, String title, String lang) {
     CharString title_cs = title.utf8();
     CharString lang_cs = lang.utf8();
     const char* cmd[] = { "sub-add", c_path, "auto", title_cs.get_data(), lang_cs.get_data(), nullptr };
-    int result = mpv_command(mpv, cmd);
+    mpv_command_async(mpv, 0, cmd);
+    //int result = mpv_command(mpv, cmd);
 
-    if (result < 0) {
-        UtilityFunctions::print("Error loading subtitle file: ", mpv_error_string(result));
-    }
-    else {
-        if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
-            UtilityFunctions::print("Subtitle file loaded successfully");
-    }
+    //if (result < 0) {
+    //    UtilityFunctions::print("Error loading subtitle file: ", mpv_error_string(result));
+    //}
+    //else {
+    //    if (debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
+    //        UtilityFunctions::print("Subtitle file loaded successfully");
+    //}
 }
 
 
