@@ -108,6 +108,39 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         ${GODOT_CPP_PATH}/include
         src
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # macOS doesn't need GLAD since it uses native OpenGL
+    # MPV is available via Homebrew
+    
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(MPV REQUIRED mpv)
+    
+    add_library(${PROJECT_NAME} SHARED ${SOURCES})
+    
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        godot-cpp
+        ${MPV_LIBRARIES}
+        "-framework OpenGL"
+        "-framework CoreVideo"
+        "-framework IOKit"
+        "-framework Cocoa"
+    )
+    
+    # Compiler settings
+    target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
+    
+    target_include_directories(${PROJECT_NAME} PRIVATE 
+        ${CMAKE_SOURCE_DIR}
+        ${MPV_INCLUDE_DIRS}
+        ${GODOT_CPP_PATH}/include
+        src
+    )
+    
+    # Add rpath for finding mpv library
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        INSTALL_RPATH "@loader_path"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     add_library(glad STATIC
         "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
