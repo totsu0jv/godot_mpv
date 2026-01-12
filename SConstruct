@@ -7,30 +7,36 @@ env = SConscript("godot-cpp/SConstruct")
 
 sources = Glob("src/*.cpp")
 
-# All platforms use the same header folder we set up in the workflow
-env.Append(CPPPATH=["thirdparty/mpv/include"])
+# --- CROSS-PLATFORM HEADERS ---
+# Add MPV and GLAD headers
+env.Append(CPPPATH=[
+    "dependencies/mpv-dev/include",
+    "dependencies/glad/include",
+    "dependencies/mpv-build/mpv/include" # For your local Linux build
+])
 
 if env["platform"] == "windows":
-    env.Append(LIBPATH=["bin/windows"])
-    env.Append(LIBS=["mpv.dll"])
+    # Link against the import library downloaded in the Action
+    env.Append(LIBPATH=["dependencies/mpv-dev"])
+    env.Append(LIBS=["mpv.dll"]) # This looks for libmpv.dll.a
 
 elif env["platform"] == "linux":
-    # Linux is easiest via pkg-config
-    env.ParseConfig("pkg-config mpv --cflags --libs")
-    env.Append(LIBS=["GL"])
-
-elif env["platform"] == "macos":
-    env.Append(LIBPATH=["bin/macos"])
-    env.Append(LIBS=["mpv"])
-    env.Append(LINKFLAGS=["-Wl,-rpath,@loader_path"])
+    # Use pkg-config (best for Linux)
+    try:
+        env.ParseConfig("pkg-config mpv --cflags --libs")
+    except:
+        # Fallback for your manual mpv-build setup
+        env.Append(LIBPATH=['dependencies/mpv-build/mpv/build'])
+        env.Append(LIBS=['mpv'])
+    
+    env.Append(LIBS=["GL", "EGL", "GLESv2"])
 
 elif env["platform"] == "android":
-    # Handle the arm64 architecture path
     arch_path = "arm64-v8a" if env["arch"] == "arm64" else env["arch"]
     env.Append(LIBPATH=["bin/android/{}".format(arch_path)])
     env.Append(LIBS=["mpv"])
 
-# Build the shared library inside the demo bin folder
+# Build the final library
 library = env.SharedLibrary(
     "demo/bin/godot_mpv.{}.{}{}".format(env["platform"], env["arch"], env["suffix"]),
     source=sources,
