@@ -1,8 +1,5 @@
 name: 🚀 Build godot_mpv GDExtension
-on: 
-  push:
-  pull_request:
-  workflow_dispatch:
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build:
@@ -38,56 +35,49 @@ jobs:
       - name: Setup SCons
         run: pip install scons
 
-      - name: Setup Android NDK
-        if: matrix.platform == 'android'
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r25c
+      - name: Install Dependencies (Linux/Android)
+        if: matrix.platform == 'linux' || matrix.platform == 'android'
+        run: |
+          if [ "${{ matrix.platform }}" == "linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libmpv-dev pkg-config libegl1-mesa-dev libgles2-mesa-dev
+          fi
 
-      - name: Install Linux Build Tools
-        if: matrix.platform == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y libmpv-dev pkg-config
-
-      # --- DOWNLOAD LIBMPV DEPENDENCIES ---
-      - name: Fetch libmpv Binaries
+      - name: Fetch libmpv & GLAD
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          mkdir -p thirdparty/mpv/include
+          mkdir -p dependencies/mpv-dev
+          mkdir -p dependencies/glad
           mkdir -p bin/${{ matrix.platform }}
-          mkdir -p extra/download
 
           if [ "${{ matrix.platform }}" == "windows" ]; then
-            # We filter for the standard x86_64 build and ignore the v3/v4 optimized versions
+            # Download mpv-dev
             gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-dev-x86_64-[0-9]*.7z' --dir extra/download
             7z x extra/download/mpv-dev-x86_64-*.7z -oextra/mpv-sdk
-            cp -r extra/mpv-sdk/x86_64-w64-mingw32/include/* thirdparty/mpv/include/
-            cp extra/mpv-sdk/x86_64-w64-mingw32/bin/libmpv-2.dll bin/windows/
-            cp extra/mpv-sdk/x86_64-w64-mingw32/lib/libmpv.dll.a bin/windows/
+            # Correct paths for shinchiro archives
+            cp -r extra/mpv-sdk/include/* dependencies/mpv-dev/
+            cp extra/mpv-sdk/lib/libmpv.dll.a dependencies/mpv-dev/
+            cp extra/mpv-sdk/libmpv-2.dll bin/windows/
+            
+            # Download GLAD (Generic EGL/GLES2 headers for Windows)
+            curl -L https://github.com/Dav1dde/glad/archive/refs/heads/master.zip -o glad.zip
+            unzip glad.zip -d dependencies/glad
           fi
 
           if [ "${{ matrix.platform }}" == "android" ]; then
-            gh release download --repo media-kit/libmpv-android-video-build --pattern 'default-arm64-v8a.jar' --dir extra/download
-            unzip extra/download/default-arm64-v8a.jar -d extra/android-sdk
+            gh release download --repo media-kit/libmpv-android-video-build --pattern 'default-arm64-v8a.jar' --output libmpv.zip
+            unzip libmpv.zip -d extra/android-sdk
             mkdir -p bin/android/arm64-v8a
             cp extra/android-sdk/lib/arm64-v8a/libmpv.so bin/android/arm64-v8a/
           fi
 
-          if [ "${{ matrix.platform }}" == "macos" ]; then
-            gh release download --repo media-kit/libmpv-darwin-build --pattern 'libmpv-macos-universal.tar.gz' --dir extra/download
-            tar -xzf extra/download/libmpv-macos-universal.tar.gz -C bin/macos/
-          fi
-
-      # --- BUILD ---
       - name: Build GDExtension
-        shell: bash
-        run: |
-          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_debug
+        run: scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_debug
 
-      # --- UPLOAD ---
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: godot-mpv-${{ matrix.platform }}-${{ matrix.arch }}
-          path: bin/
+          path: demo/bin/
