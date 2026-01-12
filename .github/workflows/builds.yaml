@@ -54,11 +54,21 @@ jobs:
       - name: Build
         run: cmake --build build -j$(nproc)
 
+      - name: List build output
+        run: |
+          echo "Checking build output directory..."
+          ls -la godot_project/bin/ || echo "godot_project/bin/ doesn't exist"
+          echo "Checking alternative locations..."
+          find . -name "*.so" -o -name "godot_mpv*" | head -20
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: godot-mpv-linux-${{ matrix.build_type }}
-          path: godot_project/bin/godot_mpv.linux.*
+          path: |
+            godot_project/bin/godot_mpv.linux.*
+            godot_project/bin/*.so
+          if-no-files-found: warn
 
   build-windows:
     runs-on: windows-latest
@@ -149,7 +159,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cmake -S . -B build \
-            -G "MinGW Makefiles" \
+            -G "Ninja" \
             -DCMAKE_C_COMPILER=gcc \
             -DCMAKE_CXX_COMPILER=g++ \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
