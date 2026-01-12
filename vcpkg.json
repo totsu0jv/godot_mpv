@@ -1,7 +1,0 @@
-{
-  "name": "godot-mpv",
-  "version": "0.1.0",
-  "dependencies": [
-    "angle"
-  ]
-}
