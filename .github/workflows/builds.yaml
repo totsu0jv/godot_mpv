@@ -1,5 +1,8 @@
 name: 🚀 Build godot_mpv GDExtension
-on: [push, pull_request]
+on: 
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -42,34 +45,40 @@ jobs:
         with:
           ndk-version: r25c
 
-      - name: Install Linux/Mac Build Tools
+      - name: Install Linux Build Tools
         if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libmpv-dev pkg-config
 
       # --- DOWNLOAD LIBMPV DEPENDENCIES ---
       - name: Fetch libmpv Binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           mkdir -p thirdparty/mpv/include
           mkdir -p bin/${{ matrix.platform }}
 
           if [ "${{ matrix.platform }}" == "windows" ]; then
-            curl -L -o mpv-sdk.7z https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20251225/mpv-dev-x86_64-20251225-git-4567abc.7z
+            # Use GitHub CLI to find the latest shinchiro dev build
+            gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-dev-x86_64-*.7z' --output mpv-sdk.7z
             7z x mpv-sdk.7z -oextra/mpv-sdk
+            # Copy headers and libs to predictable locations
             cp -r extra/mpv-sdk/x86_64-w64-mingw32/include/* thirdparty/mpv/include/
             cp extra/mpv-sdk/x86_64-w64-mingw32/bin/libmpv-2.dll bin/windows/
             cp extra/mpv-sdk/x86_64-w64-mingw32/lib/libmpv.dll.a bin/windows/
           fi
 
           if [ "${{ matrix.platform }}" == "android" ]; then
-            # Download headers and .so for Android
-            curl -L -o libmpv-android.tar.gz https://github.com/media-kit/libmpv-android-video-build/releases/latest/download/libmpv-android-arm64-v8a.tar.gz
-            tar -xzf libmpv-android.tar.gz -C bin/android/
-            # Note: You may need to grab headers from a generic source or use the Windows ones
+            # Media-kit distributes Android libs inside .jar files
+            gh release download --repo media-kit/libmpv-android-video-build --pattern 'default-arm64-v8a.jar' --output libmpv-android.zip
+            unzip libmpv-android.zip -d extra/android-sdk
+            # The .so files are inside lib/arm64-v8a/ inside the jar
+            mkdir -p bin/android/arm64-v8a
+            cp extra/android-sdk/lib/arm64-v8a/libmpv.so bin/android/arm64-v8a/
           fi
 
           if [ "${{ matrix.platform }}" == "macos" ]; then
-            curl -L -o libmpv-mac.tar.gz https://github.com/media-kit/libmpv-darwin-build/releases/latest/download/libmpv-macos-universal.tar.gz
+            gh release download --repo media-kit/libmpv-darwin-build --pattern 'libmpv-macos-universal.tar.gz' --output libmpv-mac.tar.gz
             tar -xzf libmpv-mac.tar.gz -C bin/macos/
           fi
 
