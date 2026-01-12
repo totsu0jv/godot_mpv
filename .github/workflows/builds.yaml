@@ -38,7 +38,6 @@ jobs:
       - name: Setup SCons
         run: pip install scons
 
-      # --- PLATFORM TOOLS ---
       - name: Setup Android NDK
         if: matrix.platform == 'android'
         uses: nttld/setup-ndk@v1
@@ -57,29 +56,27 @@ jobs:
         run: |
           mkdir -p thirdparty/mpv/include
           mkdir -p bin/${{ matrix.platform }}
+          mkdir -p extra/download
 
           if [ "${{ matrix.platform }}" == "windows" ]; then
-            # Use GitHub CLI to find the latest shinchiro dev build
-            gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-dev-x86_64-*.7z' --output mpv-sdk.7z
-            7z x mpv-sdk.7z -oextra/mpv-sdk
-            # Copy headers and libs to predictable locations
+            # We filter for the standard x86_64 build and ignore the v3/v4 optimized versions
+            gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-dev-x86_64-[0-9]*.7z' --dir extra/download
+            7z x extra/download/mpv-dev-x86_64-*.7z -oextra/mpv-sdk
             cp -r extra/mpv-sdk/x86_64-w64-mingw32/include/* thirdparty/mpv/include/
             cp extra/mpv-sdk/x86_64-w64-mingw32/bin/libmpv-2.dll bin/windows/
             cp extra/mpv-sdk/x86_64-w64-mingw32/lib/libmpv.dll.a bin/windows/
           fi
 
           if [ "${{ matrix.platform }}" == "android" ]; then
-            # Media-kit distributes Android libs inside .jar files
-            gh release download --repo media-kit/libmpv-android-video-build --pattern 'default-arm64-v8a.jar' --output libmpv-android.zip
-            unzip libmpv-android.zip -d extra/android-sdk
-            # The .so files are inside lib/arm64-v8a/ inside the jar
+            gh release download --repo media-kit/libmpv-android-video-build --pattern 'default-arm64-v8a.jar' --dir extra/download
+            unzip extra/download/default-arm64-v8a.jar -d extra/android-sdk
             mkdir -p bin/android/arm64-v8a
             cp extra/android-sdk/lib/arm64-v8a/libmpv.so bin/android/arm64-v8a/
           fi
 
           if [ "${{ matrix.platform }}" == "macos" ]; then
-            gh release download --repo media-kit/libmpv-darwin-build --pattern 'libmpv-macos-universal.tar.gz' --output libmpv-mac.tar.gz
-            tar -xzf libmpv-mac.tar.gz -C bin/macos/
+            gh release download --repo media-kit/libmpv-darwin-build --pattern 'libmpv-macos-universal.tar.gz' --dir extra/download
+            tar -xzf extra/download/libmpv-macos-universal.tar.gz -C bin/macos/
           fi
 
       # --- BUILD ---
