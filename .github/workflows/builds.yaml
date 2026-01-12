@@ -123,20 +123,7 @@ jobs:
           # List the structure to understand it
           echo "Archive contents:"
           ls -la
-          
-          # The archive likely extracts to a subdirectory, let's handle it
-          if [ -d "include" ] && [ -d "lib" ]; then
-            echo "Files are already in the right place"
-          else
-            # Find the actual directory and move contents up
-            EXTRACT_DIR=$(find . -mindepth 1 -maxdepth 1 -type d | head -1)
-            if [ -n "$EXTRACT_DIR" ]; then
-              echo "Moving files from $EXTRACT_DIR"
-              mv "$EXTRACT_DIR"/* .
-              rm -rf "$EXTRACT_DIR"
-            fi
-          fi
-          
+                    
           rm -f libmpv.7z
           
           # Show final structure
@@ -154,10 +141,11 @@ jobs:
           fi
           
           # Verify headers exist
-          if [ ! -d "include/mpv" ] && [ ! -f "include/mpv/client.h" ]; then
+          if [ ! -f "include/mpv/client.h" ]; then
             echo "Error: mpv headers not found"
             exit 1
           fi
+
           
           echo "Successfully downloaded and extracted libmpv"
 
