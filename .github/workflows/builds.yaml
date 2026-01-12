@@ -42,9 +42,7 @@ jobs:
       - name: Setup Godot CPP
         run: |
           if [ ! -d "$GODOT_CPP_PATH" ]; then
-            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
-            cd $GODOT_CPP_PATH
-            git checkout 4.3-stable
+            git clone -b 4.3 https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
           fi
 
       - name: Configure CMake
@@ -84,8 +82,10 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-angleproject
+            mingw-w64-x86_64-7zip
             git
             make
+            unzip
 
       - name: Download libmpv
         shell: msys2 {0}
@@ -142,9 +142,7 @@ jobs:
         shell: msys2 {0}
         run: |
           if [ ! -d "$GODOT_CPP_PATH" ]; then
-            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
-            cd $GODOT_CPP_PATH
-            git checkout 4.3-stable
+            git clone -b 4.3 https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
           fi
 
       - name: Configure CMake
@@ -193,9 +191,7 @@ jobs:
       - name: Setup Godot CPP
         run: |
           if [ ! -d "$GODOT_CPP_PATH" ]; then
-            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
-            cd $GODOT_CPP_PATH
-            git checkout 4.3-stable
+            git clone -b 4.3 https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
           fi
 
       - name: Configure CMake
@@ -246,9 +242,7 @@ jobs:
       - name: Setup Godot CPP
         run: |
           if [ ! -d "$GODOT_CPP_PATH" ]; then
-            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
-            cd $GODOT_CPP_PATH
-            git checkout 4.3-stable
+            git clone -b 4.3 https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
           fi
 
       - name: Download/Build libmpv for Android
