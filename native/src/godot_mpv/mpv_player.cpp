@@ -252,7 +252,7 @@ void MPVPlayer::_notification(int p_what) {
                 mpv_terminate_destroy(mpv);
                 mpv = nullptr;
             }
-            
+            #ifndef __APPLE__
             // Clean up OpenGL resources
             if (egl_display != EGL_NO_DISPLAY) {
                 if (egl_context != EGL_NO_CONTEXT) {
@@ -269,7 +269,7 @@ void MPVPlayer::_notification(int p_what) {
                 eglTerminate(egl_display);
                 egl_display = EGL_NO_DISPLAY;
             }
-            
+            #endif
             // Clean up OpenGL resources
             if (fbo != 0) {
                 glDeleteFramebuffers(1, &fbo);
@@ -390,7 +390,7 @@ void MPVPlayer::_ready() {
 bool MPVPlayer::initialize_gl() {
     if(debug_level == DEBUG_SIMPLE || debug_level == DEBUG_FULL)
     UtilityFunctions::print("Initializing OpenGL for MPV rendering");
-    
+    #ifndef __APPLE__
     EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (display == EGL_NO_DISPLAY) {
         UtilityFunctions::print("failed to init egl display");
@@ -436,7 +436,7 @@ bool MPVPlayer::initialize_gl() {
     if (!gladLoadGLES2((GLADloadfunc)load_func)) {
         UtilityFunctions::print("eglGetProcName failed");
     }
-
+    #endif
     // Create FBO for rendering
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);

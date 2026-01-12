@@ -30,6 +30,9 @@
 #elif defined(__ANDROID__)
 #include <EGL/egl.h>
 #include <glad/gles2.h>
+#elif __APPLE__
+#include <OpenGL/gl3.h>
+#include <dlfcn.h> 
 #endif
 
 using namespace godot;
@@ -44,9 +47,12 @@ private:
     mpv_render_context* mpv_ctx = nullptr;
     
     // OpenGL resources
+    #ifndef __APPLE__
     EGLDisplay egl_display = EGL_NO_DISPLAY;
     EGLSurface egl_surface = EGL_NO_SURFACE;
     EGLContext egl_context = EGL_NO_CONTEXT;
+    #endif
+
     GLuint fbo = 0;
     GLuint texture = 0;
     
@@ -179,7 +185,11 @@ private:
     
     // Function to get OpenGL function pointers for MPV
     static void* get_proc_address_mpv(void* ctx, const char* name) {
+        #ifdef __APPLE__
+        return dlsym(RTLD_DEFAULT, name);
+        #else
         return (void*)eglGetProcAddress(name);
+        #endif
     }
 };
 
