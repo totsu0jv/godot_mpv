@@ -1,83 +1,116 @@
-name: 🚀 Build godot_mpv GDExtension
-on: [push, pull_request, workflow_dispatch]
+name: Build godot_mpv (All Platforms)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
+    name: ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-            platform: linux
-            arch: x86_64
-          - os: windows-latest
-            platform: windows
-            arch: x86_64
-          - os: macos-latest
-            platform: macos
-            arch: universal
-          - os: ubuntu-22.04
-            platform: android
-            arch: arm64
+          - platform: linux
+            os: ubuntu-latest
+
+          - platform: windows
+            os: windows-latest
+
+          - platform: macos
+            os: macos-latest
+
+          - platform: android
+            os: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Setup SCons
-        run: pip install scons
-
-      - name: Install Dependencies (Linux/Android)
-        if: matrix.platform == 'linux' || matrix.platform == 'android'
+      ####################################
+      # LINUX
+      ####################################
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
         run: |
-          if [ "${{ matrix.platform }}" == "linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y libmpv-dev pkg-config libegl1-mesa-dev libgles2-mesa-dev
-          fi
+          sudo apt update
+          sudo apt install -y \
+            git cmake build-essential pkg-config python3 \
+            libx11-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libasound2-dev libpulse-dev libegl1-mesa-dev \
+            libssl-dev
 
-      - name: Fetch libmpv & GLAD
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
+      - name: Build mpv (Linux)
+        if: matrix.platform == 'linux'
         run: |
-          mkdir -p dependencies/mpv-dev
-          mkdir -p dependencies/glad
-          mkdir -p bin/${{ matrix.platform }}
+          git clone https://github.com/mpv-player/mpv-build.git dependencies/mpv-build
+          cd dependencies/mpv-build
+          ./rebuild -j$(nproc)
 
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            # Download mpv-dev
-            gh release download --repo shinchiro/mpv-winbuild-cmake --pattern 'mpv-dev-x86_64-[0-9]*.7z' --dir extra/download
-            7z x extra/download/mpv-dev-x86_64-*.7z -oextra/mpv-sdk
-            # Correct paths for shinchiro archives
-            cp -r extra/mpv-sdk/include/* dependencies/mpv-dev/
-            cp extra/mpv-sdk/lib/libmpv.dll.a dependencies/mpv-dev/
-            cp extra/mpv-sdk/libmpv-2.dll bin/windows/
-            
-            # Download GLAD (Generic EGL/GLES2 headers for Windows)
-            curl -L https://github.com/Dav1dde/glad/archive/refs/heads/master.zip -o glad.zip
-            unzip glad.zip -d dependencies/glad
-          fi
+      ####################################
+      # WINDOWS
+      ####################################
+      - name: Setup MSYS2 (Windows)
+        if: matrix.platform == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-mpv
+            mingw-w64-x86_64-pkg-config
 
-          if [ "${{ matrix.platform }}" == "android" ]; then
-            gh release download --repo media-kit/libmpv-android-video-build --pattern 'default-arm64-v8a.jar' --output libmpv.zip
-            unzip libmpv.zip -d extra/android-sdk
-            mkdir -p bin/android/arm64-v8a
-            cp extra/android-sdk/lib/arm64-v8a/libmpv.so bin/android/arm64-v8a/
-          fi
+      ####################################
+      # MACOS
+      ####################################
+      - name: Install macOS dependencies
+        if: matrix.platform == 'macos'
+        run: |
+          brew update
+          brew install cmake mpv pkg-config
 
-      - name: Build GDExtension
-        run: scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_debug
+      ####################################
+      # ANDROID
+      ####################################
+      - name: Setup Android SDK & NDK
+        if: matrix.platform == 'android'
+        uses: android-actions/setup-android@v3
 
-      - name: Upload Artifacts
+      - name: Install Android NDK
+        if: matrix.platform == 'android'
+        run: |
+          sdkmanager "ndk;25.2.9519653"
+
+      - name: Build mpv for Android
+        if: matrix.platform == 'android'
+        run: |
+          git clone https://github.com/mpv-player/mpv-build.git dependencies/mpv-build
+          cd dependencies/mpv-build
+          ./rebuild --target=android -j$(nproc)
+
+      ####################################
+      # COMMON CMAKE BUILD
+      ####################################
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+
+      - name: Build
+        run: |
+          cmake --build build --config Release -- -j2
+
+      ####################################
+      # ARTIFACTS
+      ####################################
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: godot-mpv-${{ matrix.platform }}-${{ matrix.arch }}
-          path: demo/bin/
+          name: godot_mpv-${{ matrix.platform }}
+          path: build/
