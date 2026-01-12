@@ -1,112 +1,322 @@
-name: Build godot_mpv (All Platforms)
+name: Build Godot MPV Extension
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GODOT_CPP_PATH: engine/godot-cpp
 
 jobs:
-  build:
-    name: ${{ matrix.platform }}
-    runs-on: ${{ matrix.os }}
-
+  build-linux:
+    runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - platform: linux
-            os: ubuntu-latest
-
-          - platform: windows
-            os: windows-latest
-
-          - platform: macos
-            os: macos-latest
-
-          - platform: android
-            os: ubuntu-latest
-
+        build_type: [Release, Debug]
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      ####################################
-      # LINUX
-      ####################################
-      - name: Install Linux dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            git cmake build-essential pkg-config python3 \
-            libx11-dev libxinerama-dev libxcursor-dev libxi-dev \
-            libasound2-dev libpulse-dev libegl1-mesa-dev \
-            libssl-dev
-
-      - name: Build mpv (Linux)
-        if: matrix.platform == 'linux'
-        run: |
-          git clone https://github.com/mpv-player/mpv-build.git dependencies/mpv-build
-          cd dependencies/mpv-build
-          ./rebuild -j$(nproc)
-
-      ####################################
-      # WINDOWS
-      ####################################
-      - name: Setup MSYS2 (Windows)
-        if: matrix.platform == 'windows'
-        uses: msys2/setup-msys2@v2
         with:
-          update: true
-          install: >
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-mpv
-            mingw-w64-x86_64-pkg-config
+          submodules: recursive
 
-      ####################################
-      # MACOS
-      ####################################
-      - name: Install macOS dependencies
-        if: matrix.platform == 'macos'
+      - name: Install dependencies
         run: |
-          brew update
-          brew install cmake mpv pkg-config
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libegl1-mesa-dev \
+            libgles2-mesa-dev \
+            libmpv-dev \
+            python3 \
+            python3-pip \
+            git
 
-      ####################################
-      # ANDROID
-      ####################################
-      - name: Setup Android SDK & NDK
-        if: matrix.platform == 'android'
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK
-        if: matrix.platform == 'android'
+      - name: Setup Godot CPP
         run: |
-          sdkmanager "ndk;25.2.9519653"
+          if [ ! -d "$GODOT_CPP_PATH" ]; then
+            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
+            cd $GODOT_CPP_PATH
+            git checkout 4.3-stable
+          fi
 
-      - name: Build mpv for Android
-        if: matrix.platform == 'android'
-        run: |
-          git clone https://github.com/mpv-player/mpv-build.git dependencies/mpv-build
-          cd dependencies/mpv-build
-          ./rebuild --target=android -j$(nproc)
-
-      ####################################
-      # COMMON CMAKE BUILD
-      ####################################
       - name: Configure CMake
         run: |
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_INSTALL_PREFIX=/usr
 
       - name: Build
-        run: |
-          cmake --build build --config Release -- -j2
+        run: cmake --build build -j$(nproc)
 
-      ####################################
-      # ARTIFACTS
-      ####################################
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: godot_mpv-${{ matrix.platform }}
-          path: build/
+          name: godot-mpv-linux-${{ matrix.build_type }}
+          path: godot_project/bin/godot_mpv.linux.*
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-angleproject
+            git
+            make
+
+      - name: Download libmpv
+        shell: msys2 {0}
+        run: |
+          mkdir -p dependencies/mpv-dev
+          cd dependencies/mpv-dev
+          
+          # Get the latest release info from GitHub API
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest)
+          
+          # Extract the download URL for mpv-dev-x86_64
+          DOWNLOAD_URL=$(echo "$LATEST_RELEASE" | grep -o "https://github.com/zhongfly/mpv-winbuild/releases/download/[^\"]*mpv-dev-x86_64[^\"]*\.7z" | head -1)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Failed to find latest mpv-dev release"
+            exit 1
+          fi
+          
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L "$DOWNLOAD_URL" -o libmpv.7z
+          
+          # Extract the archive
+          7z x libmpv.7z
+          
+          # The structure should be flat or have subdirectories
+          # Move all files to current directory
+          find . -mindepth 2 -type f -exec mv {} . \; 2>/dev/null || true
+          find . -mindepth 1 -type d -exec rm -rf {} \; 2>/dev/null || true
+          
+          rm -f libmpv.7z
+          
+          # Verify critical files exist
+          if [ ! -f "libmpv.dll.a" ] && [ ! -f "mpv.lib" ]; then
+            echo "Error: libmpv import library not found after extraction"
+            echo "Files present:"
+            ls -la
+            exit 1
+          fi
+          
+          echo "Successfully downloaded and extracted libmpv"
+          ls -la
+
+      - name: Setup GLAD
+        shell: msys2 {0}
+        run: |
+          # GLAD should already be in dependencies/glad from your repo
+          # If not, you'll need to download it
+          if [ ! -d "dependencies/glad" ]; then
+            echo "GLAD directory not found. Please add GLAD files to dependencies/glad"
+            exit 1
+          fi
+
+      - name: Setup Godot CPP
+        shell: msys2 {0}
+        run: |
+          if [ ! -d "$GODOT_CPP_PATH" ]; then
+            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
+            cd $GODOT_CPP_PATH
+            git checkout 4.3-stable
+          fi
+
+      - name: Configure CMake
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build \
+            -G "MinGW Makefiles" \
+            -DCMAKE_C_COMPILER=gcc \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build -j$(nproc)
+
+      - name: Copy MPV DLL
+        shell: msys2 {0}
+        run: |
+          cp dependencies/mpv-dev/libmpv-2.dll godot_project/bin/ || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-mpv-windows-${{ matrix.build_type }}
+          path: |
+            godot_project/bin/godot_mpv.windows.*
+            godot_project/bin/libmpv-2.dll
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+        arch: [x86_64, arm64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          brew install cmake mpv pkg-config
+
+      - name: Setup Godot CPP
+        run: |
+          if [ ! -d "$GODOT_CPP_PATH" ]; then
+            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
+            cd $GODOT_CPP_PATH
+            git checkout 4.3-stable
+          fi
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-mpv-macos-${{ matrix.arch }}-${{ matrix.build_type }}
+          path: godot_project/bin/godot_mpv.macos.*
+
+  build-android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+        arch: [arm64-v8a, armeabi-v7a, x86_64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+          add-to-path: true
+
+      - name: Install CMake
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Setup Godot CPP
+        run: |
+          if [ ! -d "$GODOT_CPP_PATH" ]; then
+            git clone https://github.com/godotengine/godot-cpp.git $GODOT_CPP_PATH
+            cd $GODOT_CPP_PATH
+            git checkout 4.3-stable
+          fi
+
+      - name: Download/Build libmpv for Android
+        run: |
+          # Note: You'll need to provide pre-built libmpv for Android
+          # or set up a build process for it
+          mkdir -p dependencies/aarch64/mpv
+          # This is a placeholder - you need actual libmpv.so files
+          echo "Warning: libmpv for Android needs to be provided"
+
+      - name: Configure CMake
+        run: |
+          # Map arch to ABI
+          case ${{ matrix.arch }} in
+            arm64-v8a)
+              ANDROID_ABI=arm64-v8a
+              ;;
+            armeabi-v7a)
+              ANDROID_ABI=armeabi-v7a
+              ;;
+            x86_64)
+              ANDROID_ABI=x86_64
+              ;;
+          esac
+          
+          cmake -S . -B build-android \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_ANDROID_NDK=$ANDROID_NDK_HOME \
+            -DCMAKE_ANDROID_ARCH_ABI=$ANDROID_ABI \
+            -DCMAKE_ANDROID_STL_TYPE=c++_shared \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build-android -j$(nproc)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-mpv-android-${{ matrix.arch }}-${{ matrix.build_type }}
+          path: godot_project/bin/godot_mpv.android.*
+
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-windows, build-macos, build-android]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release bundle
+        run: |
+          mkdir -p release/bin
+          # Copy all built libraries to release folder
+          find artifacts -type f \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -exec cp {} release/bin/ \;
+          
+          # Create archive
+          cd release
+          zip -r ../godot-mpv-${{ github.ref_name }}.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: godot-mpv-${{ github.ref_name }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
