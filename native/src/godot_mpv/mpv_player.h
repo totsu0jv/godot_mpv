@@ -30,9 +30,8 @@
 #elif defined(__ANDROID__)
 #include <EGL/egl.h>
 #include <glad/gles2.h>
-#elif __APPLE__
+#elif defined(__APPLE__)
 #include <OpenGL/gl3.h>
-#include <dlfcn.h> 
 #endif
 
 using namespace godot;
@@ -47,7 +46,7 @@ private:
     mpv_render_context* mpv_ctx = nullptr;
     
     // OpenGL resources
-    #ifndef __APPLE__
+    #ifndef defined(__APPLE__)
     EGLDisplay egl_display = EGL_NO_DISPLAY;
     EGLSurface egl_surface = EGL_NO_SURFACE;
     EGLContext egl_context = EGL_NO_CONTEXT;
@@ -167,10 +166,7 @@ private:
     
     // Update the texture on the main thread
     void _update_texture_internal();
-    
-    // Update a 3D material's texture
-    void update_3d_material_texture(Ref<Material> p_material, Ref<Texture2D> p_texture);
-    
+        
     // MPV render update callback
     static void on_mpv_render_update(void* ctx);
 
@@ -185,8 +181,8 @@ private:
     
     // Function to get OpenGL function pointers for MPV
     static void* get_proc_address_mpv(void* ctx, const char* name) {
-        #ifdef __APPLE__
-        return dlsym(RTLD_DEFAULT, name);
+        #ifdef defined(__APPLE__)
+        return (void *)NSGLGetProcAddress(name);
         #else
         return (void*)eglGetProcAddress(name);
         #endif

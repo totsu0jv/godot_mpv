@@ -164,9 +164,11 @@ MPVPlayer::MPVPlayer() :
 	last_subtitle_text(""),
     frame_count(0),
     stream_frame_threshold(30), // Allow up to 30 black frames for streaming
+    #ifndef defined(__APPLE__)
     egl_display(EGL_NO_DISPLAY),
     egl_surface(EGL_NO_SURFACE),
     egl_context(EGL_NO_CONTEXT),
+    #endif
     is_buffering(false) {
     
     g_instance = this;
@@ -252,7 +254,7 @@ void MPVPlayer::_notification(int p_what) {
                 mpv_terminate_destroy(mpv);
                 mpv = nullptr;
             }
-            #ifndef __APPLE__
+            #ifndef defined(__APPLE__)
             // Clean up OpenGL resources
             if (egl_display != EGL_NO_DISPLAY) {
                 if (egl_context != EGL_NO_CONTEXT) {

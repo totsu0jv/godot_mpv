@@ -109,8 +109,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # macOS doesn't need GLAD since it uses native OpenGL
-    # MPV is available via Homebrew
+    add_compile_definitions(GL_SILENCE_DEPRECATION)
+
     
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(MPV REQUIRED mpv)
