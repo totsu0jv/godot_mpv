@@ -118,7 +118,7 @@ jobs:
           curl -L "$DOWNLOAD_URL" -o libmpv.7z
           
           # Extract the archive
-          7z x libmpv.7z
+          7z x libmpv.7z -a
           
           # List the structure to understand it
           echo "Archive contents:"
