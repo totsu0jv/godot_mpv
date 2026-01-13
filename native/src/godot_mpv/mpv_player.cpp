@@ -14,10 +14,11 @@ using namespace godot;
 // Static member for callback context
 static MPVPlayer* g_instance = nullptr;
 
+#ifndef __APPLE__
 void* load_func(const char* name) {
     return (void*)eglGetProcAddress(name);
 }
-
+#endif
 void MPVPlayer::_bind_methods() {
     // Register methods
     ClassDB::bind_method(D_METHOD("initialize"), &MPVPlayer::initialize);
