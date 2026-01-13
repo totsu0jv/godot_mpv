@@ -189,7 +189,7 @@ jobs:
         with:
           name: godot-mpv-windows-${{ matrix.build_type }}
           path: |
-            godot_project/bin/godot_mpv.windows.*
+            godot_project/bin/libgodot_mpv.windows.*
             godot_project/bin/libmpv-2.dll
 
   build-macos:
