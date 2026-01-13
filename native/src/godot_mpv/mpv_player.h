@@ -46,7 +46,7 @@ private:
     mpv_render_context* mpv_ctx = nullptr;
     
     // OpenGL resources
-    #ifndef defined(__APPLE__)
+    #ifndef __APPLE__
     EGLDisplay egl_display = EGL_NO_DISPLAY;
     EGLSurface egl_surface = EGL_NO_SURFACE;
     EGLContext egl_context = EGL_NO_CONTEXT;
@@ -181,7 +181,7 @@ private:
     
     // Function to get OpenGL function pointers for MPV
     static void* get_proc_address_mpv(void* ctx, const char* name) {
-        #ifdef defined(__APPLE__)
+        #ifdef __APPLE__
         return (void *)NSGLGetProcAddress(name);
         #else
         return (void*)eglGetProcAddress(name);

@@ -142,7 +142,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    
     # FIX: Ensure ANDROID_ABI is defined
     set(ANDROID_ABI ${CMAKE_ANDROID_ARCH_ABI})
     message(STATUS "Android ABI: ${ANDROID_ABI}")
@@ -150,6 +151,10 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     add_library(glad STATIC
         "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
         "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
+    )
+
+    set_target_properties(glad PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
     )
 
     target_include_directories(glad PUBLIC
