@@ -32,6 +32,7 @@
 #include <glad/gles2.h>
 #elif defined(__APPLE__)
 #include <OpenGL/gl3.h>
+#include <dlfcn.h>
 #endif
 
 using namespace godot;
@@ -182,7 +183,7 @@ private:
     // Function to get OpenGL function pointers for MPV
     static void* get_proc_address_mpv(void* ctx, const char* name) {
         #ifdef __APPLE__
-        return (void *)NSGLGetProcAddress(name);
+        return dlsym(RTLD_DEFAULT, name);
         #else
         return (void*)eglGetProcAddress(name);
         #endif

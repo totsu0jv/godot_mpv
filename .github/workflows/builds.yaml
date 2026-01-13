@@ -66,7 +66,7 @@ jobs:
         with:
           name: godot-mpv-linux-${{ matrix.build_type }}
           path: |
-            godot_project/bin/godot_mpv.linux.*
+            godot_project/bin/libgodot_mpv.linux.*
             godot_project/bin/*.so
           if-no-files-found: warn
 
@@ -228,7 +228,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: godot-mpv-macos-${{ matrix.arch }}-${{ matrix.build_type }}
-          path: godot_project/bin/godot_mpv.macos.*
+          path: godot_project/bin/libgodot_mpv.macos.*
 
   build-android:
     runs-on: ubuntu-latest
@@ -304,7 +304,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: godot-mpv-android-${{ matrix.arch }}-${{ matrix.build_type }}
-          path: godot_project/bin/godot_mpv.android.*
+          path: godot_project/bin/libgodot_mpv.android.*
 
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
